@@ -1,0 +1,485 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - Construction Progress API
+  version: 1.0.0
+  description: >
+    CRUD endpoints for Work Packages and Progress Entries. All endpoints
+    require a Bearer access token and are subject to role-based and
+    project-scoped authorization.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Work Packages
+  - name: Progress Entries
+
+paths:
+  /projects/{projectId}/work-packages:
+    get:
+      summary: List work packages for a project
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: sort_by
+          in: query
+          schema: { type: string, enum: [plannedStart, plannedEnd, name, createdAt] }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc] }
+      responses:
+        '200':
+          description: Paginated list of work packages
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPackageListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "77000000-0000-0000-0000-000000000001"
+                    project_id: "88888888-8888-8888-8888-888888888888"
+                    name: "Intake Well Construction"
+                    planned_start: "2026-01-15"
+                    planned_end: "2026-04-15"
+                    weightage_pct: 25.0
+                    latest_progress_pct: 42.0
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a work package
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkPackageCreateRequest' }
+            example:
+              name: "Distribution Network Laying"
+              planned_start: "2026-05-01"
+              planned_end: "2026-09-30"
+              weightage_pct: 35.0
+      responses:
+        '201':
+          description: Work package created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPackageResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409':
+          description: Weightage cap exceeded for this project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: WEIGHTAGE_EXCEEDED
+                  message: "Total weightage for this project would be 110.00%, exceeding the 100% cap (currently 75.00% allocated)."
+
+  /work-packages/{id}:
+    get:
+      summary: Get a single work package
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Work package detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPackageResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update of a work package
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkPackageCreateRequest' }
+      responses:
+        '200':
+          description: Work package updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPackageResponse' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    patch:
+      summary: Partial update of a work package
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkPackagePatchRequest' }
+            example:
+              remarks: "Actual start delayed by monsoon"
+      responses:
+        '200':
+          description: Work package updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkPackageResponse' }
+        '403':
+          description: Non-planning role attempted to change a planning field
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete a work package (blocked if progress history exists)
+      tags: [Work Packages]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '409':
+          description: Work package has progress history and cannot be deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: WORK_PACKAGE_HAS_HISTORY
+                  message: "This work package has 12 progress entries and cannot be deleted. Mark it as inactive instead."
+
+  /work-packages/{workPackageId}/progress-entries:
+    get:
+      summary: List progress entries for a work package
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: workPackageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: List of progress entries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressEntryListResponse' }
+    post:
+      summary: Log a new progress entry
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: workPackageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: force
+          in: query
+          description: Admin-only override for the date-range business rule
+          schema: { type: boolean }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressEntryCreateRequest' }
+            example:
+              reported_date: "2026-07-15"
+              physical_progress_pct: 45.0
+              remarks: "Formwork completed for east wall; concreting scheduled next week."
+      responses:
+        '201':
+          description: Progress entry created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressEntryResponse' }
+        '409':
+          description: Duplicate entry for this work package/date
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: DUPLICATE_PROGRESS_ENTRY
+                  message: "A progress entry already exists for this work package on this date. Use PATCH to update it instead."
+        '422':
+          description: Business rule violation (progress decreased, or date out of range)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /progress-entries/{id}:
+    get:
+      summary: Get a single progress entry
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Progress entry detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressEntryResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update of a progress entry
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressEntryCreateRequest' }
+      responses:
+        '200':
+          description: Progress entry updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressEntryResponse' }
+        '403':
+          description: Edit window expired for this creator, or entry not owned by requester
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      summary: Partial update of a progress entry
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProgressEntryPatchRequest' }
+            example:
+              remarks: "Formwork completed for east wall; concreting done ahead of schedule."
+      responses:
+        '200':
+          description: Progress entry updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressEntryResponse' }
+    delete:
+      summary: Delete a progress entry (Admin/Project Manager only)
+      tags: [Progress Entries]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  schemas:
+    WorkPackageCreateRequest:
+      type: object
+      required: [name, planned_start, planned_end, weightage_pct]
+      properties:
+        name: { type: string, minLength: 3, maxLength: 200 }
+        planned_start: { type: string, format: date }
+        planned_end: { type: string, format: date }
+        actual_start: { type: string, format: date, nullable: true }
+        actual_end: { type: string, format: date, nullable: true }
+        weightage_pct: { type: number, minimum: 0, maximum: 100 }
+
+    WorkPackagePatchRequest:
+      type: object
+      properties:
+        name: { type: string }
+        planned_start: { type: string, format: date }
+        planned_end: { type: string, format: date }
+        actual_start: { type: string, format: date }
+        actual_end: { type: string, format: date }
+        weightage_pct: { type: number, minimum: 0, maximum: 100 }
+
+    WorkPackageResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            name: { type: string }
+            planned_start: { type: string, format: date }
+            planned_end: { type: string, format: date }
+            actual_start: { type: string, format: date, nullable: true }
+            actual_end: { type: string, format: date, nullable: true }
+            weightage_pct: { type: number }
+            latest_progress_pct: { type: number }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    WorkPackageListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/WorkPackageResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    ProgressEntryCreateRequest:
+      type: object
+      required: [reported_date, physical_progress_pct]
+      properties:
+        reported_date: { type: string, format: date }
+        physical_progress_pct: { type: number, minimum: 0, maximum: 100 }
+        remarks: { type: string, maxLength: 1000 }
+        attachment_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    ProgressEntryPatchRequest:
+      type: object
+      properties:
+        physical_progress_pct: { type: number, minimum: 0, maximum: 100 }
+        remarks: { type: string, maxLength: 1000 }
+        attachment_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    ProgressEntryResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            work_package_id: { type: string, format: uuid }
+            reported_date: { type: string, format: date }
+            physical_progress_pct: { type: number }
+            remarks: { type: string, nullable: true }
+            attachment_ids:
+              type: array
+              items: { type: string, format: uuid }
+            reported_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    ProgressEntryListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ProgressEntryResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed schema validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role or project scope does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found or soft-deleted
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UnprocessableEntity:
+      description: Business rule violation on otherwise well-formed data
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

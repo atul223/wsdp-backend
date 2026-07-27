@@ -1,0 +1,522 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - EHS API
+  version: 1.0.0
+  description: >
+    CRUD endpoints for EHS Incidents and EHS Inspections (with embedded
+    checklist items). All endpoints require a Bearer access token and are
+    subject to role-based and project-scoped authorization.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: EHS Incidents
+  - name: EHS Inspections
+
+paths:
+  /projects/{projectId}/ehs-incidents:
+    get:
+      summary: List EHS incidents for a project
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, under_review, closed] }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [low, medium, high, critical] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of EHS incidents
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "aa000000-0000-0000-0000-000000000001"
+                    project_id: "88888888-8888-8888-8888-888888888888"
+                    incident_type: "fall"
+                    severity: "high"
+                    incident_date: "2026-07-10"
+                    description: "Worker slipped near the intake well scaffolding; minor injury, first aid administered."
+                    status: "under_review"
+                    reported_by: "user-uuid-here"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Report a new EHS incident
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentCreateRequest' }
+            example:
+              incident_type: "fall"
+              severity: "high"
+              incident_date: "2026-07-15"
+              description: "Worker slipped near the intake well scaffolding; minor injury, first aid administered on site."
+      responses:
+        '201':
+          description: Incident reported
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /ehs-incidents/{id}:
+    get:
+      summary: Get a single EHS incident
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Incident detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update of an EHS incident
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentPutRequest' }
+      responses:
+        '200':
+          description: Incident updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentResponse' }
+        '422':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: "Cannot move status from 'closed' to 'open'. Only forward transitions (none) are allowed without Admin approval."
+    patch:
+      summary: Partial update of an EHS incident (e.g., status change)
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentPatchRequest' }
+            example:
+              status: "closed"
+      responses:
+        '200':
+          description: Incident updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentResponse' }
+        '403':
+          description: Edit window expired, or reporter attempting to edit another user's incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete an EHS incident (Admin only, and only while status='open')
+      tags: [EHS Incidents]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '409':
+          description: Incident is under_review/closed and part of the permanent safety record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: INCIDENT_NOT_DELETABLE
+                  message: "This incident is 'closed' and is part of the permanent safety record. It cannot be deleted — close it instead if resolved."
+
+  /projects/{projectId}/ehs-inspections:
+    get:
+      summary: List EHS inspections for a project
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Paginated list of EHS inspections
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionListResponse' }
+    post:
+      summary: Record a new EHS inspection (with optional checklist items)
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InspectionCreateRequest' }
+            example:
+              inspection_date: "2026-07-15"
+              score_pct: 88.5
+              remarks: "Routine monthly safety walk-through."
+              checklist_items:
+                - item_description: "PPE compliance among site workers"
+                  status: "compliant"
+                - item_description: "Fire extinguisher inspection tags current"
+                  status: "non_compliant"
+                  due_date: "2026-07-25"
+      responses:
+        '201':
+          description: Inspection recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionResponse' }
+        '400':
+          description: A non_compliant checklist item was submitted without a due_date
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /ehs-inspections/{id}:
+    get:
+      summary: Get a single EHS inspection with its checklist items
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Inspection detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update (replaces top-level fields and the checklist item set)
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InspectionCreateRequest' }
+      responses:
+        '200':
+          description: Inspection updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionResponse' }
+    patch:
+      summary: Partial update of top-level inspection fields only (score, remarks)
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InspectionPatchRequest' }
+            example:
+              score_pct: 92.0
+      responses:
+        '200':
+          description: Inspection updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionResponse' }
+    delete:
+      summary: Delete an EHS inspection (Admin/Project Manager only)
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ehs-checklist-items/{itemId}:
+    patch:
+      summary: Update a single checklist item (e.g., mark remediation complete)
+      tags: [EHS Inspections]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChecklistItemPatchRequest' }
+            example:
+              status: "compliant"
+      responses:
+        '200':
+          description: Checklist item updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChecklistItemResponse' }
+        '400':
+          description: Marked non_compliant without a due_date
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+components:
+  schemas:
+    IncidentCreateRequest:
+      type: object
+      required: [incident_type, severity, incident_date, description]
+      properties:
+        incident_type: { type: string, enum: [fall, equipment, electrical, excavation, vehicle, environmental, other] }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        incident_date: { type: string, format: date }
+        description: { type: string, minLength: 10, maxLength: 2000 }
+
+    IncidentPutRequest:
+      allOf:
+        - $ref: '#/components/schemas/IncidentCreateRequest'
+        - type: object
+          properties:
+            status: { type: string, enum: [open, under_review, closed] }
+
+    IncidentPatchRequest:
+      type: object
+      properties:
+        incident_type: { type: string, enum: [fall, equipment, electrical, excavation, vehicle, environmental, other] }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        incident_date: { type: string, format: date }
+        description: { type: string }
+        status: { type: string, enum: [open, under_review, closed] }
+
+    IncidentResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            incident_type: { type: string }
+            severity: { type: string }
+            incident_date: { type: string, format: date }
+            description: { type: string }
+            status: { type: string }
+            reported_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    IncidentListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/IncidentResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    ChecklistItemInput:
+      type: object
+      required: [item_description, status]
+      properties:
+        item_description: { type: string, minLength: 3, maxLength: 255 }
+        status: { type: string, enum: [compliant, non_compliant, not_applicable] }
+        due_date: { type: string, format: date, nullable: true, description: "Required when status is non_compliant" }
+
+    ChecklistItemPatchRequest:
+      type: object
+      properties:
+        status: { type: string, enum: [compliant, non_compliant, not_applicable] }
+        due_date: { type: string, format: date, nullable: true }
+
+    ChecklistItemResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            inspection_id: { type: string, format: uuid }
+            item_description: { type: string }
+            status: { type: string }
+            due_date: { type: string, format: date, nullable: true }
+
+    InspectionCreateRequest:
+      type: object
+      required: [inspection_date]
+      properties:
+        inspection_date: { type: string, format: date }
+        score_pct: { type: number, minimum: 0, maximum: 100 }
+        remarks: { type: string, maxLength: 1000 }
+        checklist_items:
+          type: array
+          items: { $ref: '#/components/schemas/ChecklistItemInput' }
+
+    InspectionPatchRequest:
+      type: object
+      properties:
+        score_pct: { type: number, minimum: 0, maximum: 100 }
+        remarks: { type: string, maxLength: 1000 }
+
+    InspectionResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            inspection_date: { type: string, format: date }
+            score_pct: { type: number, nullable: true }
+            remarks: { type: string, nullable: true }
+            inspected_by: { type: string, format: uuid }
+            checklist_items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  item_description: { type: string }
+                  status: { type: string }
+                  due_date: { type: string, format: date, nullable: true }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    InspectionListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/InspectionResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed schema validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role or project scope does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,568 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - Resource Dashboard API
+  version: 1.0.0
+  description: >
+    CRUD endpoints for Resources and Allocations. All endpoints require a
+    Bearer access token and are subject to role-based and project-scoped
+    authorization.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Resource Dashboard - Resources
+  - name: Resource Dashboard - Allocations
+
+paths:
+  /projects/{projectId}/resources:
+    get:
+      summary: List resources registered for a project
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          schema: { type: string, enum: [equipment, manpower, material] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of resources
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "r1a2b3c4-1111-4a2b-9c3d-000000000001"
+                    project_id: "9d0a1b2c-aaaa-4444-8888-000000000000"
+                    name: "Excavator JCB-3D"
+                    type: "equipment"
+                    unit: "hours"
+                    total_capacity: 400
+                    notes: null
+                    allocated_quantity: 120
+                    remaining_capacity: 280
+                    created_at: "2026-06-01T09:00:00.000Z"
+                    updated_at: "2026-06-01T09:00:00.000Z"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Register a resource for a project
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResourceCreateRequest' }
+            example:
+              name: "Excavator JCB-3D"
+              type: "equipment"
+              unit: "hours"
+              total_capacity: 400
+              notes: "Rented from vendor, on-site through Q3"
+      responses:
+        '201':
+          description: Resource created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Duplicate resource name within this project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: DUPLICATE_RESOURCE
+                  message: 'A resource named "Excavator JCB-3D" already exists for this project.'
+
+  /resources/{id}:
+    get:
+      summary: Get a single resource (includes allocated/remaining capacity)
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resource found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Fully replace a resource
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResourceCreateRequest' }
+            example:
+              name: "Excavator JCB-3D"
+              type: "equipment"
+              unit: "hours"
+              total_capacity: 350
+              notes: "Reduced after fleet reallocation"
+      responses:
+        '200':
+          description: Resource updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: New total_capacity is below already-committed allocation total
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: CAPACITY_BELOW_COMMITTED
+                  message: "total_capacity (350) cannot be less than the 380 already committed to active allocations for this resource."
+    patch:
+      summary: Partially update a resource
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResourcePatchRequest' }
+            example:
+              notes: "Now shared with an adjacent project"
+      responses:
+        '200':
+          description: Resource updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResourceResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Duplicate resource name, or capacity below committed amount
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete a resource (Admin/Project Manager only)
+      description: Only resources with zero allocations can be deleted.
+      tags: [Resource Dashboard - Resources]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Resource deleted
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Resource has allocations and cannot be deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: RESOURCE_HAS_ALLOCATIONS
+                  message: "This resource has 4 allocation(s) and cannot be deleted."
+
+  /resources/{resourceId}/allocations:
+    get:
+      summary: List allocations against a resource
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [planned, in_use, completed, cancelled] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of allocations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "a9f0e1d2-2222-4a2b-9c3d-000000000002"
+                    resource_id: "r1a2b3c4-1111-4a2b-9c3d-000000000001"
+                    work_package_id: "w8b7c6d5-3333-4a2b-9c3d-000000000003"
+                    quantity: 40
+                    allocation_date: "2026-07-10"
+                    status: "in_use"
+                    remarks: "Foundation excavation, Block C"
+                    allocated_by: "9d0a1b2c-user-4444-8888-000000000000"
+                    created_at: "2026-07-10T09:00:00.000Z"
+                    updated_at: "2026-07-11T08:00:00.000Z"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Create a new allocation against a resource (status defaults to 'planned')
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AllocationCreateRequest' }
+            example:
+              work_package_id: "w8b7c6d5-3333-4a2b-9c3d-000000000003"
+              quantity: 40
+              allocation_date: "2026-07-10"
+              remarks: "Foundation excavation, Block C"
+      responses:
+        '201':
+          description: Allocation created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: work_package_id does not belong to the same project as the resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Allocation would exceed the resource's total capacity, or a duplicate allocation already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: CAPACITY_EXCEEDED
+                  message: "This allocation would bring total commitments to 440.00, exceeding the resource's total_capacity of 400.00 (currently 400.00 committed)."
+
+  /allocations/{id}:
+    get:
+      summary: Get a single allocation
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Allocation found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Fully replace an allocation's core details (status unchanged)
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AllocationCreateRequest' }
+            example:
+              work_package_id: "w8b7c6d5-3333-4a2b-9c3d-000000000003"
+              quantity: 35
+              allocation_date: "2026-07-11"
+              remarks: "Reduced after schedule shift"
+      responses:
+        '200':
+          description: Allocation updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403':
+          description: Allocation is completed and final - Admin/PM only
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Would exceed resource capacity, or duplicate allocation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: work_package_id does not belong to the same project as the resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      summary: Partially update an allocation, including status transitions (planned -> in_use -> completed, or -> cancelled)
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AllocationPatchRequest' }
+            example:
+              status: "in_use"
+      responses:
+        '200':
+          description: Allocation updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AllocationResponse' }
+        '400':
+          description: Validation error - no fields provided, or invalid status value
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Allocation status is final (completed/cancelled) and only Admin/PM may change it further
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: FORBIDDEN
+                  message: 'Allocation status "completed" is final. Only an Admin or Project Manager may change it further.'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Would exceed resource capacity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete an allocation (Admin/Project Manager only; completed allocations cannot be deleted)
+      tags: [Resource Dashboard - Allocations]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Allocation deleted
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Completed allocations cannot be deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: ALLOCATION_COMPLETED_CANNOT_DELETE
+                  message: "A completed allocation cannot be deleted. Change its status instead if it was recorded in error."
+
+components:
+  schemas:
+    ResourceCreateRequest:
+      type: object
+      required: [name, type, unit, total_capacity]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [equipment, manpower, material] }
+        unit: { type: string, description: "e.g. hours, person-days, bags, units" }
+        total_capacity: { type: number, minimum: 0 }
+        notes: { type: string, nullable: true }
+
+    ResourcePatchRequest:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [equipment, manpower, material] }
+        unit: { type: string }
+        total_capacity: { type: number, minimum: 0 }
+        notes: { type: string, nullable: true }
+
+    ResourceResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            name: { type: string }
+            type: { type: string }
+            unit: { type: string }
+            total_capacity: { type: number }
+            notes: { type: string, nullable: true }
+            allocated_quantity: { type: number }
+            remaining_capacity: { type: number }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    ResourceListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ResourceResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    AllocationCreateRequest:
+      type: object
+      required: [quantity, allocation_date]
+      properties:
+        work_package_id: { type: string, format: uuid, nullable: true }
+        quantity: { type: number, minimum: 0 }
+        allocation_date: { type: string, format: date }
+        remarks: { type: string, nullable: true }
+
+    AllocationPatchRequest:
+      type: object
+      properties:
+        work_package_id: { type: string, format: uuid, nullable: true }
+        quantity: { type: number, minimum: 0 }
+        allocation_date: { type: string, format: date }
+        remarks: { type: string, nullable: true }
+        status: { type: string, enum: [planned, in_use, completed, cancelled] }
+
+    AllocationResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            resource_id: { type: string, format: uuid }
+            work_package_id: { type: string, format: uuid, nullable: true }
+            quantity: { type: number }
+            allocation_date: { type: string, format: date }
+            status: { type: string }
+            remarks: { type: string, nullable: true }
+            allocated_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    AllocationListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AllocationResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed schema validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role or project scope does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource, allocation, or project not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,309 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - Auth API
+  version: 1.0.0
+  description: Login, refresh, logout, password reset, and session management.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Auth
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate and receive an access token (refresh token set as httpOnly cookie)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: "admin@watersupply-monitor.example", password: "ChangeMe123!" }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '423':
+          description: Account temporarily locked after repeated failed attempts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      summary: Rotate the refresh token (read from cookie) and issue a new access token
+      tags: [Auth]
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefreshResponse' }
+        '401':
+          description: Missing, invalid, expired, or reused refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/logout:
+    post:
+      summary: Revoke the current session
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Logged out successfully }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/password/forgot:
+    post:
+      summary: Request a password reset (always returns a generic response)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+            example: { email: "user@example.com" }
+      responses:
+        '200': { description: Generic confirmation, regardless of whether the email exists }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/password/reset:
+    post:
+      summary: Consume a reset token and set a new password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200': { description: Password reset; all sessions invalidated }
+        '400':
+          description: Reset token invalid or expired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/password/change:
+    post:
+      summary: Change password while logged in (requires current password)
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200': { description: Password changed; all sessions invalidated }
+        '400':
+          description: Current password incorrect
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      summary: Get the current user's profile, role, and permissions
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions:
+    get:
+      summary: List active sessions for the current user
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active sessions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      summary: Revoke all sessions for the current user ("log out everywhere")
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: All sessions revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions/{id}:
+    delete:
+      summary: Revoke one specific session
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Session revoked }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/users/{id}/sessions:
+    delete:
+      summary: Admin-forced revoke of all sessions for a given user
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: All sessions for the specified user revoked }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    LoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            access_token: { type: string }
+            expires_in: { type: integer, description: "Seconds until access token expiry" }
+            user:
+              type: object
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                email: { type: string }
+                role: { type: string }
+        message: { type: string }
+
+    RefreshResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            access_token: { type: string }
+            expires_in: { type: integer }
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password: { type: string, minLength: 8 }
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string, minLength: 8 }
+
+    MeResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            email: { type: string }
+            role: { type: string }
+            permissions:
+              type: array
+              items: { type: string }
+              example: ["construction_progress:read", "ehs:create"]
+
+    SessionListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              device_info: { type: string, nullable: true }
+              ip_address: { type: string, nullable: true }
+              created_at: { type: string, format: date-time }
+              expires_at: { type: string, format: date-time }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

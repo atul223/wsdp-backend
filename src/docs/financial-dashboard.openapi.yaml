@@ -1,0 +1,578 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - Financial Dashboard API
+  version: 1.0.0
+  description: >
+    CRUD endpoints for Budgets and Invoices. All endpoints require a
+    Bearer access token and are subject to role-based and project-scoped
+    authorization.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Financial Dashboard - Budgets
+  - name: Financial Dashboard - Invoices
+
+paths:
+  /projects/{projectId}/budgets:
+    get:
+      summary: List budget lines for a project
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: sort
+          in: query
+          schema: { type: string }
+          description: "e.g. fiscal_year, -allocated_amount"
+      responses:
+        '200':
+          description: Paginated list of budgets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "b1e7c9a0-1111-4a2b-9c3d-000000000001"
+                    project_id: "9d0a1b2c-aaaa-4444-8888-000000000000"
+                    category: "Materials"
+                    fiscal_year: 2026
+                    allocated_amount: 500000
+                    currency: "INR"
+                    notes: null
+                    utilized_amount: 120000
+                    remaining_amount: 380000
+                    created_at: "2026-06-01T09:00:00.000Z"
+                    updated_at: "2026-06-01T09:00:00.000Z"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Create a budget line for a project
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetCreateRequest' }
+            example:
+              category: "Materials"
+              fiscal_year: 2026
+              allocated_amount: 500000
+              currency: "INR"
+              notes: "Cement, steel, pipes"
+      responses:
+        '201':
+          description: Budget created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Duplicate budget line (same category + fiscal_year)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: DUPLICATE_BUDGET_LINE
+                  message: 'A budget line already exists for category "Materials" in fiscal year 2026.'
+
+  /budgets/{id}:
+    get:
+      summary: Get a single budget line (includes utilized/remaining amounts)
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Budget found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Fully replace a budget line
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetCreateRequest' }
+            example:
+              category: "Materials"
+              fiscal_year: 2026
+              allocated_amount: 450000
+              currency: "INR"
+              notes: "Revised after Q2 review"
+      responses:
+        '200':
+          description: Budget updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: New allocated_amount is below already-committed invoice total
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: ALLOCATION_BELOW_COMMITTED
+                  message: "allocated_amount (450000) cannot be less than the 480000 already committed to active invoices under this budget."
+    patch:
+      summary: Partially update a budget line
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetPatchRequest' }
+            example:
+              notes: "Updated after vendor negotiation"
+      responses:
+        '200':
+          description: Budget updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Duplicate budget line, or allocation below committed amount
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete a budget line (Admin only)
+      description: Only budgets with zero invoices can be deleted.
+      tags: [Financial Dashboard - Budgets]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Budget deleted
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Budget has invoices and cannot be deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: BUDGET_HAS_INVOICES
+                  message: "This budget has 3 invoice(s) and cannot be deleted."
+
+  /budgets/{budgetId}/invoices:
+    get:
+      summary: List invoices under a budget
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: budgetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, paid, rejected] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of invoices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "c2f8d0b1-2222-4a2b-9c3d-000000000002"
+                    budget_id: "b1e7c9a0-1111-4a2b-9c3d-000000000001"
+                    invoice_number: "INV-2026-0045"
+                    vendor_name: "Shree Steel & Cement Supplies"
+                    amount: 120000
+                    invoice_date: "2026-07-01"
+                    due_date: "2026-07-31"
+                    status: "approved"
+                    payment_date: null
+                    attachment_ids: []
+                    submitted_by: "9d0a1b2c-user-4444-8888-000000000000"
+                    created_at: "2026-07-01T09:00:00.000Z"
+                    updated_at: "2026-07-02T11:00:00.000Z"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Submit a new invoice against a budget (status defaults to 'pending')
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: budgetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceCreateRequest' }
+            example:
+              invoice_number: "INV-2026-0045"
+              vendor_name: "Shree Steel & Cement Supplies"
+              amount: 120000
+              invoice_date: "2026-07-01"
+              due_date: "2026-07-31"
+              attachment_ids: []
+      responses:
+        '201':
+          description: Invoice created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Invoice would exceed the budget's allocated amount, or duplicate invoice_number
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: BUDGET_EXCEEDED
+                  message: "This invoice would bring total commitments to 620000.00, exceeding the budget's allocated_amount of 500000.00 (currently 500000.00 committed)."
+
+  /invoices/{id}:
+    get:
+      summary: Get a single invoice
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Invoice found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Fully replace an invoice's core details (status unchanged)
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceCreateRequest' }
+            example:
+              invoice_number: "INV-2026-0045"
+              vendor_name: "Shree Steel & Cement Supplies Pvt Ltd"
+              amount: 118000
+              invoice_date: "2026-07-01"
+              due_date: "2026-08-05"
+              attachment_ids: []
+      responses:
+        '200':
+          description: Invoice updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403':
+          description: Invoice is paid and final - Admin only
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Would exceed budget allocation, or duplicate invoice_number
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      summary: Partially update an invoice, including status transitions (pending -> approved -> paid, or -> rejected)
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoicePatchRequest' }
+            example:
+              status: "approved"
+      responses:
+        '200':
+          description: Invoice updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        '400':
+          description: Validation error - no fields provided, or invalid status value
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Invoice status is final (paid/rejected) and only Admin may change it further
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: FORBIDDEN
+                  message: 'Invoice status "paid" is final. Only an Admin may change it further.'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Would exceed budget allocation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete an invoice (Admin only; paid invoices cannot be deleted)
+      tags: [Financial Dashboard - Invoices]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Invoice deleted
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Paid invoices cannot be deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: INVOICE_PAID_CANNOT_DELETE
+                  message: "A paid invoice cannot be deleted. Change its status instead if it was recorded in error."
+
+components:
+  schemas:
+    BudgetCreateRequest:
+      type: object
+      required: [category, fiscal_year, allocated_amount]
+      properties:
+        category: { type: string }
+        fiscal_year: { type: integer }
+        allocated_amount: { type: number, minimum: 0 }
+        currency: { type: string, default: "INR" }
+        notes: { type: string, nullable: true }
+
+    BudgetPatchRequest:
+      type: object
+      properties:
+        category: { type: string }
+        fiscal_year: { type: integer }
+        allocated_amount: { type: number, minimum: 0 }
+        currency: { type: string }
+        notes: { type: string, nullable: true }
+
+    BudgetResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            category: { type: string }
+            fiscal_year: { type: integer }
+            allocated_amount: { type: number }
+            currency: { type: string }
+            notes: { type: string, nullable: true }
+            utilized_amount: { type: number }
+            remaining_amount: { type: number }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    BudgetListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/BudgetResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    InvoiceCreateRequest:
+      type: object
+      required: [invoice_number, vendor_name, amount, invoice_date]
+      properties:
+        invoice_number: { type: string }
+        vendor_name: { type: string }
+        amount: { type: number, minimum: 0 }
+        invoice_date: { type: string, format: date }
+        due_date: { type: string, format: date, nullable: true }
+        attachment_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    InvoicePatchRequest:
+      type: object
+      properties:
+        vendor_name: { type: string }
+        amount: { type: number, minimum: 0 }
+        invoice_date: { type: string, format: date }
+        due_date: { type: string, format: date, nullable: true }
+        attachment_ids:
+          type: array
+          items: { type: string, format: uuid }
+        status: { type: string, enum: [pending, approved, paid, rejected] }
+
+    InvoiceResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            budget_id: { type: string, format: uuid }
+            invoice_number: { type: string }
+            vendor_name: { type: string }
+            amount: { type: number }
+            invoice_date: { type: string, format: date }
+            due_date: { type: string, format: date, nullable: true }
+            status: { type: string }
+            payment_date: { type: string, format: date, nullable: true }
+            attachment_ids:
+              type: array
+              items: { type: string, format: uuid }
+            submitted_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    InvoiceListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/InvoiceResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed schema validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role or project scope does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Budget, invoice, or project not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

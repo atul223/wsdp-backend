@@ -1,0 +1,481 @@
+openapi: 3.0.3
+info:
+  title: Water Supply Construction Monitoring - Risk & Delay API
+  version: 1.0.0
+  description: >
+    CRUD endpoints for the Risk Register and Delay Analysis resources.
+    All endpoints require a Bearer access token and are subject to
+    role-based and project-scoped authorization.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Risk Register
+  - name: Delay Analysis
+
+paths:
+  /projects/{projectId}/risks:
+    get:
+      summary: List risks for a project
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, mitigated, closed] }
+        - name: probability
+          in: query
+          schema: { type: string, enum: [low, medium, high] }
+        - name: impact
+          in: query
+          schema: { type: string, enum: [low, medium, high] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of risks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskListResponse' }
+              example:
+                success: true
+                data:
+                  - id: "bb000000-0000-0000-0000-000000000001"
+                    project_id: "88888888-8888-8888-8888-888888888888"
+                    category: "weather"
+                    description: "Monsoon season may delay pipeline trenching in low-lying sections."
+                    probability: "high"
+                    impact: "medium"
+                    status: "open"
+                    owner_id: "user-uuid-here"
+                    identified_date: "2026-06-01"
+                meta: { page: 1, limit: 20, total: 1, total_pages: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Log a new risk
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RiskCreateRequest' }
+            example:
+              category: "weather"
+              probability: "high"
+              impact: "medium"
+              description: "Monsoon season may delay pipeline trenching in low-lying sections."
+              identified_date: "2026-07-15"
+      responses:
+        '201':
+          description: Risk logged
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /risks/{id}:
+    get:
+      summary: Get a single risk
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Risk detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update of a risk
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RiskPutRequest' }
+      responses:
+        '200':
+          description: Risk updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskResponse' }
+        '422':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: "Cannot move status from 'closed' to 'open'. Only forward transitions (none) are allowed without Admin approval."
+    patch:
+      summary: Partial update of a risk (e.g., status change)
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RiskPatchRequest' }
+            example:
+              status: "mitigated"
+      responses:
+        '200':
+          description: Risk updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RiskResponse' }
+        '403':
+          description: Edit window expired, or non-owner attempting to edit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete a risk (Admin only, and only while status='open')
+      tags: [Risk Register]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '409':
+          description: Risk is mitigated/closed and part of the permanent register history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: RISK_NOT_DELETABLE
+                  message: "This risk is 'closed' and is part of the permanent risk register history. It cannot be deleted — close it instead if no longer relevant."
+
+  /projects/{projectId}/delays:
+    get:
+      summary: List delay records for a project
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: work_package_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of delay records
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DelayListResponse' }
+    post:
+      summary: Record a new delay
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DelayCreateRequest' }
+            example:
+              work_package_id: "77000000-0000-0000-0000-000000000001"
+              reason: "Delayed cement delivery due to supplier logistics issue"
+              days_delayed: 12
+              root_cause: "Supplier's transport vehicle broke down, no backup arranged in time."
+              mitigation_plan: "Switched to a secondary local supplier for the remaining pours."
+      responses:
+        '201':
+          description: Delay record created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DelayResponse' }
+        '422':
+          description: root_cause missing for a delay exceeding the threshold, or work package doesn't belong to this project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                success: false
+                error:
+                  code: UNPROCESSABLE_ENTITY
+                  message: "root_cause is required when days_delayed exceeds 7 days"
+
+  /delays/{id}:
+    get:
+      summary: Get a single delay record
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Delay record detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DelayResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Full update of a delay record
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DelayCreateRequest' }
+      responses:
+        '200':
+          description: Delay record updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DelayResponse' }
+    patch:
+      summary: Partial update of a delay record
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DelayPatchRequest' }
+            example:
+              mitigation_plan: "Additional shift added on weekends to recover schedule."
+      responses:
+        '200':
+          description: Delay record updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DelayResponse' }
+    delete:
+      summary: Delete a delay record (Admin/Project Manager only)
+      tags: [Delay Analysis]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Deleted successfully
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  schemas:
+    RiskCreateRequest:
+      type: object
+      required: [category, description, probability, impact, identified_date]
+      properties:
+        category: { type: string, enum: [technical, financial, contractual, environmental, geopolitical, weather, other] }
+        description: { type: string, minLength: 10, maxLength: 2000 }
+        probability: { type: string, enum: [low, medium, high] }
+        impact: { type: string, enum: [low, medium, high] }
+        owner_id: { type: string, format: uuid, description: "Defaults to the creating user if omitted" }
+        identified_date: { type: string, format: date }
+
+    RiskPutRequest:
+      allOf:
+        - $ref: '#/components/schemas/RiskCreateRequest'
+        - type: object
+          properties:
+            status: { type: string, enum: [open, mitigated, closed] }
+
+    RiskPatchRequest:
+      type: object
+      properties:
+        category: { type: string, enum: [technical, financial, contractual, environmental, geopolitical, weather, other] }
+        description: { type: string }
+        probability: { type: string, enum: [low, medium, high] }
+        impact: { type: string, enum: [low, medium, high] }
+        owner_id: { type: string, format: uuid }
+        identified_date: { type: string, format: date }
+        status: { type: string, enum: [open, mitigated, closed] }
+
+    RiskResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            category: { type: string }
+            description: { type: string }
+            probability: { type: string }
+            impact: { type: string }
+            status: { type: string }
+            owner_id: { type: string, format: uuid }
+            identified_date: { type: string, format: date }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    RiskListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/RiskResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            total_pages: { type: integer }
+
+    DelayCreateRequest:
+      type: object
+      required: [reason, days_delayed]
+      properties:
+        work_package_id: { type: string, format: uuid, nullable: true }
+        reason: { type: string, minLength: 5, maxLength: 255 }
+        days_delayed: { type: integer, minimum: 0 }
+        root_cause: { type: string, maxLength: 2000, description: "Required when days_delayed exceeds 7" }
+        mitigation_plan: { type: string, maxLength: 2000 }
+
+    DelayPatchRequest:
+      type: object
+      properties:
+        work_package_id: { type: string, format: uuid, nullable: true }
+        reason: { type: string }
+        days_delayed: { type: integer, minimum: 0 }
+        root_cause: { type: string }
+        mitigation_plan: { type: string }
+
+    DelayResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            project_id: { type: string, format: uuid }
+            work_package_id: { type: string, format: uuid, nullable: true }
+            reason: { type: string }
+            days_delayed: { type: integer }
+            root_cause: { type: string, nullable: true }
+            mitigation_plan: { type: string, nullable: true }
+            reported_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    DelayListResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/DelayResponse/properties/data' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  issue: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request failed schema validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Role or project scope does not permit this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
