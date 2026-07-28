@@ -1,40 +1,29 @@
-// Water Supply Construction Monitoring Dashboard
-// Prisma schema — Authentication & Authorization module
-// Business-module tables (construction progress, financial, ehs, etc.)
-// will be added in subsequent migrations as those modules are implemented.
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-// ---------------------------------------------------------------------
-// Identity & Access
-// ---------------------------------------------------------------------
-
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  users           User[]
+  id              String           @id @default(uuid())
+  name            String           @unique
+  description     String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
   rolePermissions RolePermission[]
+  users           User[]
 
   @@map("roles")
 }
 
 model Permission {
-  id        String   @id @default(uuid())
-  module    String
-  action    String
-  createdAt DateTime @default(now()) @map("created_at")
-
+  id              String           @id @default(uuid())
+  module          String
+  action          String
+  createdAt       DateTime         @default(now()) @map("created_at")
   rolePermissions RolePermission[]
 
   @@unique([module, action])
@@ -42,36 +31,34 @@ model Permission {
 }
 
 model RolePermission {
-  roleId       String @map("role_id")
-  permissionId String @map("permission_id")
-
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
   @@map("role_permissions")
 }
 
 model User {
-  id                  String    @id @default(uuid())
+  id                  String               @id @default(uuid())
   name                String
-  email               String    @unique
-  passwordHash        String    @map("password_hash")
-  roleId              String    @map("role_id")
-  status              String    @default("active")
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until")
-  lastLoginAt         DateTime? @map("last_login_at")
-  passwordChangedAt   DateTime? @map("password_changed_at")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
-  deletedAt           DateTime? @map("deleted_at")
-
-  role                Role                 @relation(fields: [roleId], references: [id])
-  refreshTokens       RefreshToken[]
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  roleId              String               @map("role_id")
+  status              String               @default("active")
+  failedLoginAttempts Int                  @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?            @map("locked_until")
+  lastLoginAt         DateTime?            @map("last_login_at")
+  passwordChangedAt   DateTime?            @map("password_changed_at")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  deletedAt           DateTime?            @map("deleted_at")
+  auditLogs           AuditLog[]
   passwordResetTokens PasswordResetToken[]
   projectMembers      ProjectMember[]
-  auditLogs           AuditLog[]
+  refreshTokens       RefreshToken[]
+  role                Role                 @relation(fields: [roleId], references: [id])
 
   @@map("users")
 }
@@ -86,8 +73,7 @@ model RefreshToken {
   revoked    Boolean  @default(false)
   replacedBy String?  @map("replaced_by")
   createdAt  DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
@@ -101,44 +87,36 @@ model PasswordResetToken {
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
   @@map("password_reset_tokens")
 }
 
-// ---------------------------------------------------------------------
-// Minimal project scoping (full project module comes in a later phase —
-// these two models exist here only so refresh-token/JWT project scoping
-// and project_members-based authorization can function end-to-end now)
-// ---------------------------------------------------------------------
-
 model Project {
-  id        String    @id @default(uuid())
-  name      String
-  code      String    @unique
-  status    String    @default("planned")
-  startDate DateTime? @map("start_date") @db.Date
-  endDate   DateTime? @map("end_date") @db.Date
-  createdAt DateTime  @default(now()) @map("created_at")
-
-  members                 ProjectMember[]
-  workPackages            WorkPackage[]
-  pipelineSections        PipelineSection[]
-  houseConnectionClusters HouseConnectionCluster[]
-  testingActivities       TestingActivity[]
-  valveChamberSummary     ValveChamberSummary?
+  id                      String                   @id @default(uuid())
+  name                    String
+  code                    String                   @unique
+  status                  String                   @default("planned")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  endDate                 DateTime?                @map("end_date") @db.Date
+  startDate               DateTime?                @map("start_date") @db.Date
   bridgeCrossings         BridgeCrossing[]
+  budgets                 Budget[]
   constructionSnapshots   ConstructionSnapshot[]
+  delays                  Delay[]
   ehsIncidents            EhsIncident[]
   ehsInspections          EhsInspection[]
-  risks                   Risk[]
-  delays                  Delay[]
-  budgets                 Budget[]
-  resources               Resource[]
+  houseConnectionClusters HouseConnectionCluster[]
+  pipelineSections        PipelineSection[]
+  members                 ProjectMember[]
   reports                 Report[]
+  resources               Resource[]
+  risks                   Risk[]
+  testingActivities       TestingActivity[]
+  valveChamberSummary     ValveChamberSummary?
+  workPackages            WorkPackage[]
 
   @@map("projects")
 }
@@ -149,51 +127,44 @@ model ProjectMember {
   userId        String   @map("user_id")
   roleOnProject String   @map("role_on_project")
   createdAt     DateTime @default(now()) @map("created_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
   @@map("project_members")
 }
 
-// ---------------------------------------------------------------------
-// Construction Progress
-// ---------------------------------------------------------------------
-
 model WorkPackage {
-  id           String    @id @default(uuid())
-  projectId    String    @map("project_id")
-  name         String
-  plannedStart DateTime  @map("planned_start") @db.Date
-  plannedEnd   DateTime  @map("planned_end") @db.Date
-  actualStart  DateTime? @map("actual_start") @db.Date
-  actualEnd    DateTime? @map("actual_end") @db.Date
-  weightagePct Decimal   @map("weightage_pct") @db.Decimal(5, 2)
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
-
-  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  progressEntries ProgressEntry[]
+  id              String          @id @default(uuid())
+  projectId       String          @map("project_id")
+  name            String
+  plannedStart    DateTime        @map("planned_start") @db.Date
+  plannedEnd      DateTime        @map("planned_end") @db.Date
+  actualStart     DateTime?       @map("actual_start") @db.Date
+  actualEnd       DateTime?       @map("actual_end") @db.Date
+  weightagePct    Decimal         @map("weightage_pct") @db.Decimal(5, 2)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  deletedAt       DateTime?       @map("deleted_at")
   delays          Delay[]
+  progressEntries ProgressEntry[]
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("work_packages")
 }
 
 model ProgressEntry {
-  id                  String   @id @default(uuid())
-  workPackageId       String   @map("work_package_id")
-  reportedDate        DateTime @map("reported_date") @db.Date
-  physicalProgressPct Decimal  @map("physical_progress_pct") @db.Decimal(5, 2)
+  id                  String      @id @default(uuid())
+  workPackageId       String      @map("work_package_id")
+  reportedDate        DateTime    @map("reported_date") @db.Date
+  physicalProgressPct Decimal     @map("physical_progress_pct") @db.Decimal(5, 2)
   remarks             String?
-  attachmentIds       Json?    @map("attachment_ids")
-  reportedBy          String   @map("reported_by")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  attachmentIds       Json?       @map("attachment_ids")
+  reportedBy          String      @map("reported_by")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+  workPackage         WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
 
   @@unique([workPackageId, reportedDate])
   @@index([workPackageId])
@@ -201,173 +172,108 @@ model ProgressEntry {
 }
 
 model PipelineSection {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  zone String
-
-  chainageFrom String @map("chainage_from")
-  chainageTo   String @map("chainage_to")
-
-  diameter String
-
-  lengthKm Decimal @map("length_km") @db.Decimal(8, 2)
-
-  layingPct Decimal @map("laying_pct") @db.Decimal(5, 2)
-
-  testingPct Decimal @map("testing_pct") @db.Decimal(5, 2)
-
-  status String
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  zone         String
+  chainageFrom String   @map("chainage_from")
+  chainageTo   String   @map("chainage_to")
+  diameter     String
+  lengthKm     Decimal  @map("length_km") @db.Decimal(8, 2)
+  layingPct    Decimal  @map("laying_pct") @db.Decimal(5, 2)
+  testingPct   Decimal  @map("testing_pct") @db.Decimal(5, 2)
+  status       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("pipeline_sections")
 }
 
 model HouseConnectionCluster {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  clusterName String @map("cluster_name")
-
-  planned   Int
-  completed Int
-
-  inProgress Int @map("in_progress")
-
-  remaining Int
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  clusterName String   @map("cluster_name")
+  planned     Int
+  completed   Int
+  inProgress  Int      @map("in_progress")
+  remaining   Int
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("house_connection_clusters")
 }
 
 model TestingActivity {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  activityName String @map("activity_name")
-
-  plannedValue Decimal @map("planned_value") @db.Decimal(8, 2)
-
-  actualValue Decimal @map("actual_value") @db.Decimal(8, 2)
-
-  unit String
-
-  status String
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  activityName String   @map("activity_name")
+  plannedValue Decimal  @map("planned_value") @db.Decimal(8, 2)
+  actualValue  Decimal  @map("actual_value") @db.Decimal(8, 2)
+  unit         String
+  status       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("testing_activities")
 }
 
 model ValveChamberSummary {
-  id String @id @default(uuid())
-
-  projectId String @unique @map("project_id")
-
-  planned Int
-
-  completed Int
-
-  inProgress Int @map("in_progress")
-
-  notStarted Int @map("not_started")
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  projectId  String   @unique @map("project_id")
+  planned    Int
+  completed  Int
+  inProgress Int      @map("in_progress")
+  notStarted Int      @map("not_started")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("valve_chamber_summaries")
 }
 
 model BridgeCrossing {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  crossingName String @map("crossing_name")
-
-  crossingType String @map("crossing_type")
-
-  method String
-
-  status String
-
-  remarks String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  crossingName String   @map("crossing_name")
+  crossingType String   @map("crossing_type")
+  method       String
+  status       String
+  remarks      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("bridge_crossings")
 }
 
 model ConstructionSnapshot {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  snapshotDate DateTime @map("snapshot_date") @db.Date
-
-  pipelineLaidKm Decimal @map("pipeline_laid_km") @db.Decimal(8, 2)
-
-  pipelineTestedKm Decimal @map("pipeline_tested_km") @db.Decimal(8, 2)
-
-  houseConnectionsCompleted Int @map("house_connections_completed")
-
-  createdBy String @map("created_by")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                        String   @id @default(uuid())
+  projectId                 String   @map("project_id")
+  snapshotDate              DateTime @map("snapshot_date") @db.Date
+  pipelineLaidKm            Decimal  @map("pipeline_laid_km") @db.Decimal(8, 2)
+  pipelineTestedKm          Decimal  @map("pipeline_tested_km") @db.Decimal(8, 2)
+  houseConnectionsCompleted Int      @map("house_connections_completed")
+  createdBy                 String   @map("created_by")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  project                   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("construction_snapshots")
 }
 
-// ---------------------------------------------------------------------
-// Financial Dashboard
-// ---------------------------------------------------------------------
-
 model Budget {
-  id String @id @default(uuid())
-
-  projectId String @map("project_id")
-
-  category String
-
-  fiscalYear Int @map("fiscal_year")
-
-  allocatedAmount Decimal @map("allocated_amount") @db.Decimal(18, 2)
-
-  currency String @default("INR")
-
-  notes String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  deletedAt DateTime? @map("deleted_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  invoices Invoice[]
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  category        String
+  fiscalYear      Int       @map("fiscal_year")
+  allocatedAmount Decimal   @map("allocated_amount") @db.Decimal(18, 2)
+  currency        String    @default("INR")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invoices        Invoice[]
 
   @@unique([projectId, category, fiscalYear])
   @@index([projectId])
@@ -375,42 +281,25 @@ model Budget {
 }
 
 model Invoice {
-  id String @id @default(uuid())
-
-  budgetId String @map("budget_id")
-
-  invoiceNumber String @map("invoice_number")
-
-  vendorName String @map("vendor_name")
-
-  amount Decimal @db.Decimal(18, 2)
-
-  invoiceDate DateTime @map("invoice_date") @db.Date
-
-  dueDate DateTime? @map("due_date") @db.Date
-
-  status String @default("pending")
-
-  paymentDate DateTime? @map("payment_date") @db.Date
-
-  attachmentIds Json? @map("attachment_ids")
-
-  submittedBy String @map("submitted_by")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  id            String    @id @default(uuid())
+  budgetId      String    @map("budget_id")
+  invoiceNumber String    @map("invoice_number")
+  vendorName    String    @map("vendor_name")
+  amount        Decimal   @db.Decimal(18, 2)
+  invoiceDate   DateTime  @map("invoice_date") @db.Date
+  dueDate       DateTime? @map("due_date") @db.Date
+  status        String    @default("pending")
+  paymentDate   DateTime? @map("payment_date") @db.Date
+  attachmentIds Json?     @map("attachment_ids")
+  submittedBy   String    @map("submitted_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  budget        Budget    @relation(fields: [budgetId], references: [id], onDelete: Cascade)
 
   @@unique([budgetId, invoiceNumber])
   @@index([budgetId])
   @@map("invoices")
 }
-
-// ---------------------------------------------------------------------
-// EHS (Environment, Health & Safety)
-// ---------------------------------------------------------------------
 
 model EhsIncident {
   id           String   @id @default(uuid())
@@ -423,46 +312,39 @@ model EhsIncident {
   reportedBy   String   @map("reported_by")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("ehs_incidents")
 }
 
 model EhsInspection {
-  id             String   @id @default(uuid())
-  projectId      String   @map("project_id")
-  inspectionDate DateTime @map("inspection_date") @db.Date
-  scorePct       Decimal? @map("score_pct") @db.Decimal(5, 2)
+  id             String             @id @default(uuid())
+  projectId      String             @map("project_id")
+  inspectionDate DateTime           @map("inspection_date") @db.Date
+  scorePct       Decimal?           @map("score_pct") @db.Decimal(5, 2)
   remarks        String?
-  inspectedBy    String   @map("inspected_by")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inspectedBy    String             @map("inspected_by")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
   checklistItems EhsChecklistItem[]
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("ehs_inspections")
 }
 
 model EhsChecklistItem {
-  id              String    @id @default(uuid())
-  inspectionId    String    @map("inspection_id")
-  itemDescription String    @map("item_description")
+  id              String        @id @default(uuid())
+  inspectionId    String        @map("inspection_id")
+  itemDescription String        @map("item_description")
   status          String
-  dueDate         DateTime? @map("due_date") @db.Date
-
-  inspection EhsInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  dueDate         DateTime?     @map("due_date") @db.Date
+  inspection      EhsInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
 
   @@index([inspectionId])
   @@map("ehs_checklist_items")
 }
-
-// ---------------------------------------------------------------------
-// Risk & Delay
-// ---------------------------------------------------------------------
 
 model Risk {
   id             String   @id @default(uuid())
@@ -473,57 +355,50 @@ model Risk {
   impact         String
   status         String   @default("open")
   ownerId        String   @map("owner_id")
-  ownerName      String?  @map("owner_name")
   identifiedDate DateTime @map("identified_date") @db.Date
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ownerName      String?  @map("owner_name")
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("risks")
 }
 
 model Delay {
-  id             String   @id @default(uuid())
-  projectId      String   @map("project_id")
-  workPackageId  String?  @map("work_package_id")
+  id             String       @id @default(uuid())
+  projectId      String       @map("project_id")
+  workPackageId  String?      @map("work_package_id")
   reason         String
-  category       String   @default("General")
-  daysDelayed    Int      @map("days_delayed")
-  rootCause      String?  @map("root_cause")
-  mitigationPlan String?  @map("mitigation_plan")
-  status         String   @default("open")
-  reportedBy     String   @map("reported_by")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  workPackage WorkPackage? @relation(fields: [workPackageId], references: [id], onDelete: SetNull)
+  daysDelayed    Int          @map("days_delayed")
+  rootCause      String?      @map("root_cause")
+  mitigationPlan String?      @map("mitigation_plan")
+  reportedBy     String       @map("reported_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  category       String       @default("General")
+  status         String       @default("open")
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workPackage    WorkPackage? @relation(fields: [workPackageId], references: [id])
 
   @@index([projectId])
   @@index([workPackageId])
   @@map("delays")
 }
 
-// ---------------------------------------------------------------------
-// Resource Dashboard
-// ---------------------------------------------------------------------
-
 model Resource {
-  id            String    @id @default(uuid())
-  projectId     String    @map("project_id")
+  id            String       @id @default(uuid())
+  projectId     String       @map("project_id")
   name          String
   type          String
   unit          String
-  totalCapacity Decimal   @map("total_capacity") @db.Decimal(18, 2)
+  totalCapacity Decimal      @map("total_capacity") @db.Decimal(18, 2)
   notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  deletedAt     DateTime? @map("deleted_at")
-
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  allocations Allocation[]
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  deletedAt     DateTime?    @map("deleted_at")
+  allocations   Allocation[]
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, name])
   @@index([projectId])
@@ -542,8 +417,7 @@ model Allocation {
   allocatedBy    String   @map("allocated_by")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
-
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resource       Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@unique([resourceId, workPackageId, allocationDate])
   @@index([resourceId])
@@ -551,10 +425,6 @@ model Allocation {
   @@index([status])
   @@map("allocations")
 }
-
-// ---------------------------------------------------------------------
-// Reports
-// ---------------------------------------------------------------------
 
 model Report {
   id            String    @id @default(uuid())
@@ -571,18 +441,13 @@ model Report {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([module])
   @@index([status])
   @@map("reports")
 }
-
-// ---------------------------------------------------------------------
-// Audit
-// ---------------------------------------------------------------------
 
 model AuditLog {
   id          String   @id @default(uuid())
@@ -594,8 +459,7 @@ model AuditLog {
   newValue    Json?    @map("new_value")
   ipAddress   String?  @map("ip_address")
   createdAt   DateTime @default(now()) @map("created_at")
-
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User?    @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([module, referenceId])

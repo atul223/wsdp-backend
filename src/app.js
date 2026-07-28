@@ -26,12 +26,12 @@ const app = express();
 app.use(helmet());
 // CORS — restricted to the configured frontend origin, credentials
 // enabled since the refresh token travels as an httpOnly cookie.
-app.use(
-  cors({
-    origin: env.corsOrigin,
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: [
+    'https://wsdp-frontend.atul-00f.workers.dev'
+  ],
+  credentials: true
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 // HTTP access logging piped through Winston
@@ -45,11 +45,11 @@ app.get('/health', (req, res) => {
 });
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/construction-progress',dashboardRoutes);
-app.use('/api/v1', workPackageRoutes);
-app.use('/api/v1', progressEntryRoutes);
-app.use('/api/v1', ehsIncidentRoutes);
-app.use('/api/v1', ehsInspectionRoutes);
-app.use('/api/v1', riskRoutes);
+app.use('/api/v1/construction-progress', workPackageRoutes);
+app.use('/api/v1/construction-progress', progressEntryRoutes);
+app.use('/api/v1/ehs', ehsIncidentRoutes);
+app.use('/api/v1/ehs', ehsInspectionRoutes);
+app.use('/api/v1/risk-delay', riskRoutes);
 app.use('/api/v1', delayRoutes);
 app.use('/api/v1', resourceRoutes);
 app.use('/api/v1', allocationRoutes);

@@ -8,10 +8,10 @@ const REFRESH_COOKIE = env.cookies.refreshTokenCookieName;
 function refreshCookieOptions() {
   return {
     httpOnly: true,
-    secure: env.nodeEnv === 'production',
-    sameSite: 'strict',
+    secure: true,
+    sameSite: 'none',
     maxAge: env.jwt.refreshExpiresInDays * 24 * 60 * 60 * 1000,
-    path: '/api/v1/auth', // scoped to auth endpoints only
+    path: '/api/v1/auth',
   };
 }
 
