@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const env = require('./config/env');
 const logger = require('./common/utils/logger');
+const projectRoutes = require('./modules/project/project.routes');
 const authRoutes = require('./modules/auth/auth.routes');
 const dashboardRoutes = require('./modules/construction-progress/dashboard.routes');
 const workPackageRoutes = require('./modules/construction-progress/workPackage.routes');
@@ -43,6 +44,7 @@ app.use(
 app.get('/health', (req, res) => {
   res.status(200).json({ success: true, data: { status: 'ok' } });
 });
+app.use('/api/v1', projectRoutes);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/construction-progress',dashboardRoutes);
 app.use('/api/v1/construction-progress', workPackageRoutes);
@@ -50,7 +52,7 @@ app.use('/api/v1/construction-progress', progressEntryRoutes);
 app.use('/api/v1/ehs', ehsIncidentRoutes);
 app.use('/api/v1/ehs', ehsInspectionRoutes);
 app.use('/api/v1/risk-delay', riskRoutes);
-app.use('/api/v1', delayRoutes);
+app.use('/api/v1/risk-delay', delayRoutes);
 app.use('/api/v1', resourceRoutes);
 app.use('/api/v1', allocationRoutes);
 app.use('/api/v1', budgetRoutes);
