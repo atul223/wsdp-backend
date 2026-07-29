@@ -121,14 +121,11 @@ async function refresh({ rawRefreshToken, deviceInfo, ipAddress }) {
   }
 
   if (existing.revoked || existing.replacedBy) {
-    // Reuse of an already-rotated (or already-revoked) token: treat as
-    // theft. Kill every active session for this user immediately.
-    logger.error(`Refresh token reuse detected for user ${existing.userId}`);
-    await prisma.refreshToken.updateMany({
-      where: { userId: existing.userId, revoked: false },
-      data: { revoked: true },
-    });
-    throw AppError.unauthorized('Session invalid — possible token reuse detected. Please log in again.');
+    logger.warn(`Refresh token already used for user ${existing.userId}`);
+
+    throw AppError.unauthorized(
+      'Refresh token already used. Please refresh the page or log in again.'
+    );
   }
 
   const user = await prisma.user.findUnique({
