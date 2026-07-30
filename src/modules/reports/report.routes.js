@@ -1,4 +1,3 @@
-
 const express = require('express');
 const controller = require('./report.controller');
 const {
@@ -32,6 +31,14 @@ router.get(
   requirePermission(MODULE, 'read'),
   requireProjectScope((req) => req.params.projectId),
   controller.list
+);
+
+router.get(
+  '/projects/:projectId/reports/library',
+  authenticate,
+  requirePermission(MODULE, 'read'),
+  requireProjectScope((req) => req.params.projectId),
+  controller.library
 );
 
 router.post(

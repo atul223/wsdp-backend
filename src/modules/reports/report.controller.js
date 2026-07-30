@@ -1,4 +1,3 @@
-
 const service = require('./report.service');
 const { success, created, noContent } = require('../../common/responses/apiResponse');
 
@@ -19,6 +18,15 @@ async function list(req, res, next) {
   try {
     const { data, meta } = await service.listByProject(req.params.projectId, req);
     return success(res, { data, meta });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function library(req, res, next) {
+  try {
+    const data = await service.listLibraryByProject(req.params.projectId);
+    return success(res, { data });
   } catch (err) {
     next(err);
   }
@@ -117,6 +125,7 @@ async function exportOne(req, res, next) {
 module.exports = {
   getDefaultProject,
   list,
+  library,
   getOne,
   createReport,
   fullUpdate,

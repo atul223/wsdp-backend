@@ -112,6 +112,10 @@ model Project {
   pipelineSections        PipelineSection[]
   members                 ProjectMember[]
   reports                 Report[]
+  periodicReports        PeriodicReport[]
+  ipcs                   Ipc[]
+  amendments             Amendment[]
+  methodStatements       MethodStatement[]
   resources               Resource[]
   risks                   Risk[]
   testingActivities       TestingActivity[]
@@ -447,6 +451,70 @@ model Report {
   @@index([module])
   @@index([status])
   @@map("reports")
+}
+
+model PeriodicReport {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  document    String
+  latestIssue String?   @map("latest_issue")
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("periodic_reports")
+}
+
+model Ipc {
+  id        String    @id @default(uuid())
+  projectId String    @map("project_id")
+  ipc       String
+  ipcDate   DateTime? @map("ipc_date") @db.Date
+  status    String    @default("pending")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("ipcs")
+}
+
+model Amendment {
+  id        String    @id @default(uuid())
+  projectId String    @map("project_id")
+  amendment String
+  subject   String
+  status    String    @default("pending")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("amendments")
+}
+
+model MethodStatement {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  methodStatement String    @map("method_statement")
+  statementDate   DateTime? @map("statement_date") @db.Date
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("method_statements")
 }
 
 model AuditLog {

@@ -32,6 +32,60 @@ function toApiShape(report) {
   };
 }
 
+function libraryDateToApi(value) {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function toPeriodicReportApiShape(item) {
+  return {
+    id: item.id,
+    project_id: item.projectId,
+    document: item.document,
+    latest_issue: item.latestIssue || null,
+    status: item.status,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+function toIpcApiShape(item) {
+  return {
+    id: item.id,
+    project_id: item.projectId,
+    ipc: item.ipc,
+    date: libraryDateToApi(item.ipcDate),
+    status: item.status,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+function toAmendmentApiShape(item) {
+  return {
+    id: item.id,
+    project_id: item.projectId,
+    amendment: item.amendment,
+    subject: item.subject,
+    status: item.status,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+function toMethodStatementApiShape(item) {
+  return {
+    id: item.id,
+    project_id: item.projectId,
+    method_statement: item.methodStatement,
+    date: libraryDateToApi(item.statementDate),
+    status: item.status,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+
+
 async function writeAuditLog({ userId, action, referenceId, ipAddress, oldValue, newValue }) {
   try {
     await prisma.auditLog.create({
@@ -122,6 +176,68 @@ async function listByProject(projectId, req) {
     meta: buildMeta({ page, limit, total }),
   };
 }
+
+async function listLibraryByProject(projectId) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  if (!project) {
+    throw AppError.notFound('Project not found');
+  }
+
+  const [
+    periodicReports,
+    ipcs,
+    amendments,
+    methodStatements,
+  ] = await Promise.all([
+    prisma.periodicReport.findMany({
+      where: {
+        projectId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    }),
+    prisma.ipc.findMany({
+      where: {
+        projectId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    }),
+    prisma.amendment.findMany({
+      where: {
+        projectId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    }),
+    prisma.methodStatement.findMany({
+      where: {
+        projectId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    }),
+  ]);
+
+  return {
+    periodic_reports: periodicReports.map(toPeriodicReportApiShape),
+    ipcs: ipcs.map(toIpcApiShape),
+    amendments: amendments.map(toAmendmentApiShape),
+    method_statements: methodStatements.map(toMethodStatementApiShape),
+  };
+}
+
 
 async function getById(id) {
   const report = await prisma.report.findFirst({
@@ -430,6 +546,7 @@ async function exportReport({ id, format }) {
 module.exports = {
   getDefaultProjectForUser,
   listByProject,
+  listLibraryByProject,
   getById,
   create,
   fullUpdate,
