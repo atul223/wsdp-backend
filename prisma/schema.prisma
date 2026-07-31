@@ -112,10 +112,11 @@ model Project {
   pipelineSections        PipelineSection[]
   members                 ProjectMember[]
   reports                 Report[]
-  periodicReports        PeriodicReport[]
-  ipcs                   Ipc[]
-  amendments             Amendment[]
-  methodStatements       MethodStatement[]
+  periodicReports         PeriodicReport[]
+  ipcs                    Ipc[]
+  amendments              Amendment[]
+  bankGuarantees          BankGuarantee[]
+  methodStatements        MethodStatement[]
   resources               Resource[]
   risks                   Risk[]
   testingActivities       TestingActivity[]
@@ -470,35 +471,62 @@ model PeriodicReport {
 }
 
 model Ipc {
-  id        String    @id @default(uuid())
-  projectId String    @map("project_id")
-  ipc       String
-  ipcDate   DateTime? @map("ipc_date") @db.Date
-  status    String    @default("pending")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String    @id @default(uuid())
+  projectId    String    @map("project_id")
+  ipc          String
+  period       String?
+  aoaAmount    Decimal?  @map("aoa_amount") @db.Decimal(18, 2)
+  usdAmount    Decimal?  @map("usd_amount") @db.Decimal(18, 2)
+  percentage   Decimal?  @db.Decimal(5, 2)
+  aceStatus    String?   @map("ace_status")
+  clientStatus String?   @map("client_status")
+  ipcDate      DateTime? @map("ipc_date") @db.Date
+  status       String    @default("pending")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@unique([projectId, ipc])
   @@index([projectId])
   @@index([status])
   @@map("ipcs")
 }
 
 model Amendment {
-  id        String    @id @default(uuid())
-  projectId String    @map("project_id")
-  amendment String
-  subject   String
-  status    String    @default("pending")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  amendment     String
+  amendmentDate DateTime? @map("amendment_date") @db.Date
+  subject       String?
+  scope         String?
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([status])
   @@map("amendments")
+}
+
+model BankGuarantee {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  guarantee  String
+  bank       String
+  usdAmount  Decimal   @map("usd_amount") @db.Decimal(18, 2)
+  validUntil DateTime? @map("valid_until") @db.Date
+  status     String    @default("valid")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("bank_guarantees")
 }
 
 model MethodStatement {
