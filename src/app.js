@@ -24,6 +24,7 @@ const resourceRoutes = require('./modules/resource-dashboard/resource.routes');
 const allocationRoutes = require('./modules/resource-dashboard/allocation.routes');
 
 const budgetRoutes = require('./modules/financial-dashboard/budget.routes');
+const paymentTrackingRoutes = require('./modules/financial-dashboard/payment-tracking.routes');
 const invoiceRoutes = require('./modules/financial-dashboard/invoice.routes');
 const financialSummaryRoutes = require('./modules/financial-dashboard/financial-summary.routes');
 const ipcTrackerRoutes = require('./modules/financial-dashboard/ipc-tracker.routes');
@@ -76,6 +77,7 @@ app.use('/api/v1', resourceRoutes);
 app.use('/api/v1', allocationRoutes);
 
 app.use('/api/v1', budgetRoutes);
+app.use('/api/v1', paymentTrackingRoutes);
 app.use('/api/v1', invoiceRoutes);
 app.use('/api/v1', financialSummaryRoutes);
 app.use('/api/v1', ipcTrackerRoutes);

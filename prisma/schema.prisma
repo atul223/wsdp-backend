@@ -113,6 +113,7 @@ model Project {
   members                 ProjectMember[]
   reports                 Report[]
   periodicReports         PeriodicReport[]
+  paymentTrackingItems    PaymentTrackingItem[]
   ipcs                    Ipc[]
   amendments              Amendment[]
   bankGuarantees          BankGuarantee[]
@@ -527,6 +528,25 @@ model BankGuarantee {
   @@index([projectId])
   @@index([status])
   @@map("bank_guarantees")
+}
+
+model PaymentTrackingItem {
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  description   String
+  amountAoa     Decimal?  @map("amount_aoa") @db.Decimal(18, 2)
+  amountUsd     Decimal?  @map("amount_usd") @db.Decimal(18, 2)
+  isHighlighted Boolean   @default(false) @map("is_highlighted")
+  sortOrder     Int       @default(0) @map("sort_order")
+  status        String    @default("active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("payment_tracking_items")
 }
 
 model MethodStatement {
