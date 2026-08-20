@@ -102,6 +102,8 @@ model Project {
   createdAt               DateTime                 @default(now()) @map("created_at")
   endDate                 DateTime?                @map("end_date") @db.Date
   startDate               DateTime?                @map("start_date") @db.Date
+  amendments              Amendment[]
+  bankGuarantees          BankGuarantee[]
   bridgeCrossings         BridgeCrossing[]
   budgets                 Budget[]
   constructionSnapshots   ConstructionSnapshot[]
@@ -109,20 +111,21 @@ model Project {
   ehsIncidents            EhsIncident[]
   ehsInspections          EhsInspection[]
   houseConnectionClusters HouseConnectionCluster[]
+  ipcs                    Ipc[]
+  methodStatements        MethodStatement[]
+  paymentTrackingItems    PaymentTrackingItem[]
+  periodicReports         PeriodicReport[]
   pipelineSections        PipelineSection[]
   members                 ProjectMember[]
   reports                 Report[]
-  periodicReports         PeriodicReport[]
-  paymentTrackingItems    PaymentTrackingItem[]
-  ipcs                    Ipc[]
-  amendments              Amendment[]
-  bankGuarantees          BankGuarantee[]
-  methodStatements        MethodStatement[]
   resources               Resource[]
   risks                   Risk[]
   testingActivities       TestingActivity[]
   valveChamberSummary     ValveChamberSummary?
   workPackages            WorkPackage[]
+  hdpePipeStocks          HdpePipeStock[]
+  equipmentDeployments    EquipmentDeployment[]
+  workforceEmployers      WorkforceEmployer[]
 
   @@map("projects")
 }
@@ -472,20 +475,20 @@ model PeriodicReport {
 }
 
 model Ipc {
-  id           String    @id @default(uuid())
+  id           String    @id @default(dbgenerated("gen_random_uuid()"))
   projectId    String    @map("project_id")
   ipc          String
-  period       String?
-  aoaAmount    Decimal?  @map("aoa_amount") @db.Decimal(18, 2)
-  usdAmount    Decimal?  @map("usd_amount") @db.Decimal(18, 2)
-  percentage   Decimal?  @db.Decimal(5, 2)
-  aceStatus    String?   @map("ace_status")
-  clientStatus String?   @map("client_status")
   ipcDate      DateTime? @map("ipc_date") @db.Date
   status       String    @default("pending")
   createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at")
+  aceStatus    String?   @map("ace_status")
+  aoaAmount    Decimal?  @map("aoa_amount") @db.Decimal(18, 2)
+  clientStatus String?   @map("client_status")
+  percentage   Decimal?  @db.Decimal(5, 2)
+  period       String?
+  usdAmount    Decimal?  @map("usd_amount") @db.Decimal(18, 2)
   project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, ipc])
@@ -495,16 +498,16 @@ model Ipc {
 }
 
 model Amendment {
-  id            String    @id @default(uuid())
+  id            String    @id @default(dbgenerated("gen_random_uuid()"))
   projectId     String    @map("project_id")
   amendment     String
-  amendmentDate DateTime? @map("amendment_date") @db.Date
   subject       String?
-  scope         String?
   status        String    @default("pending")
   createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
+  amendmentDate DateTime? @map("amendment_date") @db.Date
+  scope         String?
   project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
@@ -513,7 +516,7 @@ model Amendment {
 }
 
 model BankGuarantee {
-  id         String    @id @default(uuid())
+  id         String    @id @default(dbgenerated("gen_random_uuid()"))
   projectId  String    @map("project_id")
   guarantee  String
   bank       String
@@ -521,7 +524,7 @@ model BankGuarantee {
   validUntil DateTime? @map("valid_until") @db.Date
   status     String    @default("valid")
   createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
   deletedAt  DateTime? @map("deleted_at")
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -563,6 +566,65 @@ model MethodStatement {
   @@index([projectId])
   @@index([status])
   @@map("method_statements")
+}
+
+// -----------------------------------------------------------------------
+// Resource Dashboard - reporting tables (formerly hardcoded on the frontend)
+// Added to give the Resource Dashboard's HDPE Pipe Stock, Equipment
+// Deployment, and Workforce By Employer tables the same persistent
+// Add/Edit/Delete/Update support that the Resource table already has.
+// -----------------------------------------------------------------------
+
+model HdpePipeStock {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  diameter   String
+  receivedM  Decimal   @map("received_m") @db.Decimal(12, 2)
+  usedM      Decimal   @map("used_m") @db.Decimal(12, 2)
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, diameter])
+  @@index([projectId])
+  @@map("hdpe_pipe_stocks")
+}
+
+model EquipmentDeployment {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  category   String
+  planned    Decimal?  @db.Decimal(12, 2)
+  deployed   Decimal   @db.Decimal(12, 2)
+  remarks    String?
+  isTotal    Boolean   @default(false) @map("is_total")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("equipment_deployments")
+}
+
+model WorkforceEmployer {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  groupName  String?   @map("group_name")
+  category   String?
+  headcount  Int
+  isTotal    Boolean   @default(false) @map("is_total")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("workforce_employers")
 }
 
 model AuditLog {

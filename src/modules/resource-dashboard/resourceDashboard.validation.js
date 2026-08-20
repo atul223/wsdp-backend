@@ -3,6 +3,8 @@ const { z } = require('zod');
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
 const uuid = z.string().uuid();
 const positiveQty = z.number().positive('Value must be greater than 0').multipleOf(0.01, 'Value may have at most 2 decimal places');
+const nonNegativeQty = z.number().min(0, 'Value cannot be negative').multipleOf(0.01, 'Value may have at most 2 decimal places');
+const nonNegativeInt = z.number().int('Value must be a whole number').min(0, 'Value cannot be negative');
 
 // -----------------------------------------------------------------------
 // Resource
@@ -63,6 +65,78 @@ const allocationPatchSchema = z
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
 
+// -----------------------------------------------------------------------
+// HDPE Pipe Stock
+// -----------------------------------------------------------------------
+
+const hdpePipeStockCreateSchema = z.object({
+  diameter: z.string().min(1, 'diameter is required').max(50),
+  received_m: nonNegativeQty,
+  used_m: nonNegativeQty,
+  sort_order: nonNegativeInt.optional(),
+});
+
+const hdpePipeStockPutSchema = hdpePipeStockCreateSchema;
+
+const hdpePipeStockPatchSchema = z
+  .object({
+    diameter: z.string().min(1).max(50).optional(),
+    received_m: nonNegativeQty.optional(),
+    used_m: nonNegativeQty.optional(),
+    sort_order: nonNegativeInt.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
+
+// -----------------------------------------------------------------------
+// Equipment Deployment
+// -----------------------------------------------------------------------
+
+const equipmentDeploymentCreateSchema = z.object({
+  category: z.string().min(1, 'category is required').max(200),
+  planned: nonNegativeQty.optional().nullable(),
+  deployed: nonNegativeQty,
+  remarks: z.string().max(500).optional().nullable(),
+  is_total: z.boolean().optional(),
+  sort_order: nonNegativeInt.optional(),
+});
+
+const equipmentDeploymentPutSchema = equipmentDeploymentCreateSchema;
+
+const equipmentDeploymentPatchSchema = z
+  .object({
+    category: z.string().min(1).max(200).optional(),
+    planned: nonNegativeQty.optional().nullable(),
+    deployed: nonNegativeQty.optional(),
+    remarks: z.string().max(500).optional().nullable(),
+    is_total: z.boolean().optional(),
+    sort_order: nonNegativeInt.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
+
+// -----------------------------------------------------------------------
+// Workforce By Employer
+// -----------------------------------------------------------------------
+
+const workforceEmployerCreateSchema = z.object({
+  group_name: z.string().max(200).optional().nullable(),
+  category: z.string().max(200).optional().nullable(),
+  headcount: nonNegativeInt,
+  is_total: z.boolean().optional(),
+  sort_order: nonNegativeInt.optional(),
+});
+
+const workforceEmployerPutSchema = workforceEmployerCreateSchema;
+
+const workforceEmployerPatchSchema = z
+  .object({
+    group_name: z.string().max(200).optional().nullable(),
+    category: z.string().max(200).optional().nullable(),
+    headcount: nonNegativeInt.optional(),
+    is_total: z.boolean().optional(),
+    sort_order: nonNegativeInt.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
+
 /** Same validateBody helper shape used by every other module. */
 function validateBody(schema) {
   return (req, res, next) => {
@@ -89,5 +163,14 @@ module.exports = {
   allocationCreateSchema,
   allocationPutSchema,
   allocationPatchSchema,
+  hdpePipeStockCreateSchema,
+  hdpePipeStockPutSchema,
+  hdpePipeStockPatchSchema,
+  equipmentDeploymentCreateSchema,
+  equipmentDeploymentPutSchema,
+  equipmentDeploymentPatchSchema,
+  workforceEmployerCreateSchema,
+  workforceEmployerPutSchema,
+  workforceEmployerPatchSchema,
   validateBody,
 };

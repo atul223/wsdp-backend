@@ -2,6 +2,9 @@ const AppError = require('../../common/errors/AppError');
 const { requireProjectScope } = require('../../middlewares/role.middleware');
 const resourceService = require('./resource.service');
 const allocationService = require('./allocation.service');
+const hdpePipeStockService = require('./hdpePipeStock.service');
+const equipmentDeploymentService = require('./equipmentDeployment.service');
+const workforceEmployerService = require('./workforceEmployer.service');
 
 /**
  * For endpoints keyed by /resources/:id — resolves the parent project id
@@ -58,4 +61,56 @@ const scopeByAllocationId = [
   requireProjectScope((req) => req.resolvedProjectId),
 ];
 
-module.exports = { scopeByResourceId, scopeByResourceParam, scopeByAllocationId };
+/** For endpoints keyed by /hdpe-pipe-stock/:id */
+const scopeByHdpePipeStockId = [
+  async (req, res, next) => {
+    try {
+      const projectId = await hdpePipeStockService.getProjectIdForRecord(req.params.id);
+      if (!projectId) return next(AppError.notFound('HDPE pipe stock record not found'));
+      req.resolvedProjectId = projectId;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  },
+  requireProjectScope((req) => req.resolvedProjectId),
+];
+
+/** For endpoints keyed by /equipment-deployments/:id */
+const scopeByEquipmentDeploymentId = [
+  async (req, res, next) => {
+    try {
+      const projectId = await equipmentDeploymentService.getProjectIdForRecord(req.params.id);
+      if (!projectId) return next(AppError.notFound('Equipment deployment record not found'));
+      req.resolvedProjectId = projectId;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  },
+  requireProjectScope((req) => req.resolvedProjectId),
+];
+
+/** For endpoints keyed by /workforce-employers/:id */
+const scopeByWorkforceEmployerId = [
+  async (req, res, next) => {
+    try {
+      const projectId = await workforceEmployerService.getProjectIdForRecord(req.params.id);
+      if (!projectId) return next(AppError.notFound('Workforce record not found'));
+      req.resolvedProjectId = projectId;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  },
+  requireProjectScope((req) => req.resolvedProjectId),
+];
+
+module.exports = {
+  scopeByResourceId,
+  scopeByResourceParam,
+  scopeByAllocationId,
+  scopeByHdpePipeStockId,
+  scopeByEquipmentDeploymentId,
+  scopeByWorkforceEmployerId,
+};

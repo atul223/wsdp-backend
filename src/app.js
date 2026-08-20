@@ -22,6 +22,9 @@ const delayRoutes = require('./modules/risk-delay/delay.routes');
 
 const resourceRoutes = require('./modules/resource-dashboard/resource.routes');
 const allocationRoutes = require('./modules/resource-dashboard/allocation.routes');
+const hdpePipeStockRoutes = require('./modules/resource-dashboard/hdpePipeStock.routes');
+const equipmentDeploymentRoutes = require('./modules/resource-dashboard/equipmentDeployment.routes');
+const workforceEmployerRoutes = require('./modules/resource-dashboard/workforceEmployer.routes');
 
 const budgetRoutes = require('./modules/financial-dashboard/budget.routes');
 const paymentTrackingRoutes = require('./modules/financial-dashboard/payment-tracking.routes');
@@ -75,6 +78,9 @@ app.use('/api/v1', delayRoutes);
 
 app.use('/api/v1', resourceRoutes);
 app.use('/api/v1', allocationRoutes);
+app.use('/api/v1', hdpePipeStockRoutes);
+app.use('/api/v1', equipmentDeploymentRoutes);
+app.use('/api/v1', workforceEmployerRoutes);
 
 app.use('/api/v1', budgetRoutes);
 app.use('/api/v1', paymentTrackingRoutes);

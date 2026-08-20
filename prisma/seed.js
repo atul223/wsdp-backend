@@ -279,12 +279,118 @@ for (const resource of sampleResources) {
 
 console.log(`Project ready: ${project.name} (${project.code})`);
 
+// -----------------------------------------------------------------------
+// Resource Dashboard reporting tables — migrated from what used to be
+// hardcoded arrays in js/resource-dashboard.js, so these tables now have
+// real, persistent rows that can be edited via the CRUD APIs.
+// -----------------------------------------------------------------------
 
+console.log('Seeding HDPE pipe stock...');
+const hdpePipeStockRows = [
+  { diameter: 'De20 PN16', receivedM: 41100, usedM: 1200 },
+  { diameter: 'De25 PN16', receivedM: 44844, usedM: 7200 },
+  { diameter: 'De63 PN10', receivedM: 32784, usedM: 12960 },
+  { diameter: 'De75 PN10', receivedM: 1968, usedM: 0 },
+  { diameter: 'De90 PN10', receivedM: 7728, usedM: 4836 },
+  { diameter: 'De110 PN10', receivedM: 3420, usedM: 1032 },
+  { diameter: 'De160 PN10', receivedM: 6860, usedM: 912 },
+  { diameter: 'De200 PN10', receivedM: 4896, usedM: 1152 },
+  { diameter: 'De250 PN10', receivedM: 2592, usedM: 1964 },
+  { diameter: 'De315 PN10', receivedM: 1872, usedM: 888 },
+  { diameter: 'De110 PN16', receivedM: 12, usedM: 0 },
+  { diameter: 'De160 PN16', receivedM: 300, usedM: 0 },
+];
+
+for (let i = 0; i < hdpePipeStockRows.length; i++) {
+  const row = hdpePipeStockRows[i];
+  await prisma.hdpePipeStock.upsert({
+    where: {
+      projectId_diameter: {
+        projectId: project.id,
+        diameter: row.diameter,
+      },
+    },
+    update: {},
+    create: {
+      projectId: project.id,
+      diameter: row.diameter,
+      receivedM: row.receivedM,
+      usedM: row.usedM,
+      sortOrder: i,
+    },
+  });
+}
+
+console.log('Seeding equipment deployment...');
+const equipmentDeploymentRows = [
+  { category: 'Earthmoving (Excavator, dump truck, backhoe)', planned: null, deployed: 4, remarks: 'No planned baseline set; utilization to be monitored against June work-front ramp-up' },
+  { category: 'Welding (Butt fusion, manual, handheld)', planned: null, deployed: 11, remarks: 'Adequate coverage for current pipe-fusion works' },
+  { category: 'Generators (30/15/10/2.5 kW)', planned: null, deployed: 5, remarks: 'Sufficient for active work fronts' },
+  { category: 'Light Vehicles (Pickups + truck)', planned: null, deployed: 7, remarks: 'Adequate site mobility support' },
+  { category: 'Tamping, cutting, grinder, jackhammer', planned: null, deployed: 12, remarks: 'Adequate for pavement and concrete works' },
+  { category: 'Survey (GPS, level)', planned: null, deployed: 2, remarks: 'Minimum required; no spare unit available' },
+  { category: 'Test equipment (Pump, tanks)', planned: null, deployed: 3, remarks: 'Repeat pressure test required (DN250, 463 m) due to equipment failure' },
+  { category: 'Other', planned: null, deployed: 2, remarks: 'Miscellaneous support equipment' },
+  { category: 'TOTAL', planned: 61, deployed: 46, remarks: 'Shortfall of 15 units vs May plan; additional mobilization pending', isTotal: true },
+];
+
+for (let i = 0; i < equipmentDeploymentRows.length; i++) {
+  const row = equipmentDeploymentRows[i];
+  const existing = await prisma.equipmentDeployment.findFirst({
+    where: { projectId: project.id, category: row.category },
+  });
+  if (!existing) {
+    await prisma.equipmentDeployment.create({
+      data: {
+        projectId: project.id,
+        category: row.category,
+        planned: row.planned,
+        deployed: row.deployed,
+        remarks: row.remarks,
+        isTotal: row.isTotal || false,
+        sortOrder: i,
+      },
+    });
+  }
+}
+
+console.log('Seeding workforce by employer...');
+const workforceEmployerRows = [
+  { groupName: 'CTCE Direct (17)', category: 'Construction Manager', headcount: 1 },
+  { groupName: null, category: 'Site Engineers', headcount: 2 },
+  { groupName: null, category: 'Land Surveyor', headcount: 1 },
+  { groupName: null, category: 'HSE Officer + Assistant', headcount: 2 },
+  { groupName: null, category: 'Social Expert + Assistants', headcount: 9 },
+  { groupName: null, category: 'Other Specialists', headcount: 2 },
+  { groupName: 'XINYI Subcontractor (58)', category: 'Skilled', headcount: 4 },
+  { groupName: null, category: 'Unskilled', headcount: 54 },
+  { groupName: 'SHIGUO Subcontractor (40)', category: 'Skilled', headcount: 4 },
+  { groupName: null, category: 'Unskilled', headcount: 36 },
+  { groupName: 'Grand Total', category: null, headcount: 115, isTotal: true },
+];
+
+const existingWorkforceCount = await prisma.workforceEmployer.count({ where: { projectId: project.id } });
+if (existingWorkforceCount === 0) {
+  for (let i = 0; i < workforceEmployerRows.length; i++) {
+    const row = workforceEmployerRows[i];
+    await prisma.workforceEmployer.create({
+      data: {
+        projectId: project.id,
+        groupName: row.groupName,
+        category: row.category,
+        headcount: row.headcount,
+        isTotal: row.isTotal || false,
+        sortOrder: i,
+      },
+    });
+  }
+}
+
+console.log('Resource dashboard reporting tables seeded.');
 
   console.log(`Admin user ready: ${adminEmail}`);
   console.log('NOTE: change the seeded admin password immediately after first login.');
 }
-
 
 main()
   .catch((e) => {
