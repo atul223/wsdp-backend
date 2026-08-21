@@ -16,6 +16,12 @@ const progressEntryRoutes = require('./modules/construction-progress/progressEnt
 
 const ehsIncidentRoutes = require('./modules/ehs/ehsIncident.routes');
 const ehsInspectionRoutes = require('./modules/ehs/ehsInspection.routes');
+const ehsComplianceRoutes = require('./modules/ehs/ehsCompliance.routes');
+const ehsIncidentSummaryRoutes = require('./modules/ehs/ehsIncidentSummary.routes');
+const ehsNonConformitySummaryRoutes = require('./modules/ehs/ehsNonConformitySummary.routes');
+const ehsResourceConsumptionRoutes = require('./modules/ehs/ehsResourceConsumption.routes');
+const ehsExportRoutes = require('./modules/ehs/ehsExport.routes');
+const ehsImportRoutes = require('./modules/ehs/ehsImport.routes');
 
 const riskRoutes = require('./modules/risk-delay/risk.routes');
 const delayRoutes = require('./modules/risk-delay/delay.routes');
@@ -75,6 +81,12 @@ app.use('/api/v1/construction-progress', progressEntryRoutes);
 
 app.use('/api/v1/ehs', ehsIncidentRoutes);
 app.use('/api/v1/ehs', ehsInspectionRoutes);
+app.use('/api/v1/ehs', ehsComplianceRoutes);
+app.use('/api/v1/ehs', ehsIncidentSummaryRoutes);
+app.use('/api/v1/ehs', ehsNonConformitySummaryRoutes);
+app.use('/api/v1/ehs', ehsResourceConsumptionRoutes);
+app.use('/api/v1/ehs', ehsExportRoutes);
+app.use('/api/v1/ehs', ehsImportRoutes);
 
 app.use('/api/v1', riskRoutes);
 app.use('/api/v1', delayRoutes);

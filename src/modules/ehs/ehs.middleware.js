@@ -2,6 +2,46 @@ const AppError = require('../../common/errors/AppError');
 const { requireProjectScope } = require('../../middlewares/role.middleware');
 const incidentService = require('./ehsIncident.service');
 const inspectionService = require('./ehsInspection.service');
+const AppError = require('../../common/errors/AppError');
+const { requireProjectScope } = require('../../middlewares/role.middleware');
+const incidentSummaryService = require('./ehsIncidentSummary.service');
+const nonConformitySummaryService = require('./ehsNonConformitySummary.service');
+const resourceConsumptionService = require('./ehsResourceConsumption.service');
+const complianceSummaryService = require('./ehsCompliance.service');
+
+
+function buildScopeById(getProjectId, notFoundMessage) {
+  return [
+    async (req, res, next) => {
+      try {
+        const id = req.params.id || req.params.itemId;
+        const projectId = await getProjectId(id);
+        if (!projectId) throw AppError.notFound(notFoundMessage);
+        req._resolvedProjectId = projectId;
+        next();
+      } catch (err) {
+        next(err);
+      }
+    },
+    requireProjectScope((req) => req._resolvedProjectId),
+  ];
+}
+
+const scopeByIncidentSummaryItemId = buildScopeById(
+  (id) => incidentSummaryService.getProjectIdForItem(id),
+  'EHS incident summary item not found'
+);
+
+const scopeByNonConformitySummaryItemId = buildScopeById(
+  (id) => nonConformitySummaryService.getProjectIdForItem(id),
+  'EHS non-conformity summary item not found'
+);
+
+const scopeByResourceConsumptionId = buildScopeById(
+  (id) => resourceConsumptionService.getProjectIdForItem(id),
+  'EHS resource consumption row not found'
+);
+
 
 const scopeByIncidentId = [
   async (req, res, next) => {
@@ -45,4 +85,4 @@ const scopeByChecklistItemId = [
   requireProjectScope((req) => req.resolvedProjectId),
 ];
 
-module.exports = { scopeByIncidentId, scopeByInspectionId, scopeByChecklistItemId };
+module.exports = { scopeByIncidentId, scopeByInspectionId, scopeByChecklistItemId, scopeByIncidentSummaryItemId,scopeByNonConformitySummaryItemId,scopeByResourceConsumptionId, };

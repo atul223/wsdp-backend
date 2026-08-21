@@ -129,6 +129,10 @@ model Project {
   nonConformities         NonConformity[]
   correctiveActions       CorrectiveAction[]
   riskDelaySummary        RiskDelaySummary?
+  ehsComplianceSummary    EhsComplianceSummary?
+  ehsIncidentSummaryItems EhsIncidentSummaryItem[]
+  ehsNonConformityItems   EhsNonConformitySummaryItem[]
+  ehsResourceConsumptions EhsResourceConsumption[]
 
   @@map("projects")
 }
@@ -683,6 +687,94 @@ model RiskDelaySummary {
   project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("risk_delay_summaries")
+}
+
+// -----------------------------------------------------------------------
+// EHS Dashboard - Compliance card overrides, Incident/Non-Conformity
+// summary registers, and Resource Consumption detail.
+//
+// EhsComplianceSummary mirrors the RiskDelaySummary "override" pattern:
+// a null field means "keep auto-calculating this card" (e.g. Open
+// Incidents auto-counts from EhsIncident where status='open' unless
+// openIncidentsOverride is set), while the 5 plan/compliance percentages
+// have no other source of truth so they are simply editable values.
+//
+// EhsIncidentSummaryItem / EhsNonConformitySummaryItem replace the old
+// single hardcoded "Incidents & Non-Conformities" table with two
+// independently CRUD-able registers, both sharing the same
+// Type / Count / Details / Status shape.
+// -----------------------------------------------------------------------
+
+model EhsComplianceSummary {
+  id                      String    @id @default(uuid())
+  projectId               String    @unique @map("project_id")
+  overallEshsPct          Decimal?  @map("overall_eshs_pct") @db.Decimal(5, 2)
+  pgasEsmpPct             Decimal?  @map("pgas_esmp_pct") @db.Decimal(5, 2)
+  healthSafetyPlanPct     Decimal?  @map("health_safety_plan_pct") @db.Decimal(5, 2)
+  siteManagementPlanPct   Decimal?  @map("site_management_plan_pct") @db.Decimal(5, 2)
+  methodStatementsPct     Decimal?  @map("method_statements_pct") @db.Decimal(5, 2)
+  openIncidentsOverride   Int?      @map("open_incidents_override")
+  openIncidentsNote       String?   @map("open_incidents_note")
+  toolboxTalks30dOverride Int?      @map("toolbox_talks_30d_override")
+  toolboxTalks30dNote     String?   @map("toolbox_talks_30d_note")
+  updatedBy               String?   @map("updated_by")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  project                 Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("ehs_compliance_summaries")
+}
+
+model EhsIncidentSummaryItem {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  type       String
+  count      Int       @default(0)
+  details    String?
+  status     String    @default("open")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("ehs_incident_summary_items")
+}
+
+model EhsNonConformitySummaryItem {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  type       String
+  count      Int       @default(0)
+  details    String?
+  status     String    @default("open")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("ehs_nonconformity_summary_items")
+}
+
+model EhsResourceConsumption {
+  id                 String    @id @default(uuid())
+  projectId          String    @map("project_id")
+  resourceName       String    @map("resource_name")
+  unit               String?
+  previousPeriodLabel String   @map("previous_period_label")
+  previousValue      Decimal   @map("previous_value") @db.Decimal(14, 2)
+  currentPeriodLabel String    @map("current_period_label")
+  currentValue       Decimal   @map("current_value") @db.Decimal(14, 2)
+  sortOrder          Int       @default(0) @map("sort_order")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("ehs_resource_consumptions")
 }
 
 model AuditLog {

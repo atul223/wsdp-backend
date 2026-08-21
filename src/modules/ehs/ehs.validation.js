@@ -113,6 +113,70 @@ function validateBody(schema) {
   };
 }
 
+const Joi = require('joi');
+
+// ---- EHS Compliance Summary (the 7 KPI cards) ----
+const complianceSummaryPatchSchema = Joi.object({
+  overall_eshs_pct: Joi.number().min(0).max(100).allow(null),
+  pgas_esmp_pct: Joi.number().min(0).max(100).allow(null),
+  health_safety_plan_pct: Joi.number().min(0).max(100).allow(null),
+  site_management_plan_pct: Joi.number().min(0).max(100).allow(null),
+  method_statements_pct: Joi.number().min(0).max(100).allow(null),
+  open_incidents_override: Joi.number().integer().min(0).allow(null),
+  open_incidents_note: Joi.string().allow('', null),
+  toolbox_talks_30d_override: Joi.number().integer().min(0).allow(null),
+  toolbox_talks_30d_note: Joi.string().allow('', null),
+}).min(1);
+
+// ---- EHS Incident Summary items / Non-Conformity Summary items ----
+// (shared shape: Type / Count / Details / Status)
+const summaryItemCreateSchema = Joi.object({
+  type: Joi.string().max(150).required(),
+  count: Joi.number().integer().min(0).default(0),
+  details: Joi.string().allow('', null),
+  status: Joi.string().max(50).required(),
+  sort_order: Joi.number().integer().default(0),
+});
+
+const summaryItemPutSchema = Joi.object({
+  type: Joi.string().max(150).required(),
+  count: Joi.number().integer().min(0).required(),
+  details: Joi.string().allow('', null),
+  status: Joi.string().max(50).required(),
+  sort_order: Joi.number().integer(),
+});
+
+const summaryItemPatchSchema = Joi.object({
+  type: Joi.string().max(150),
+  count: Joi.number().integer().min(0),
+  details: Joi.string().allow('', null),
+  status: Joi.string().max(50),
+  sort_order: Joi.number().integer(),
+}).min(1);
+
+// ---- EHS Resource Consumption ----
+const resourceConsumptionCreateSchema = Joi.object({
+  resource_name: Joi.string().max(150).required(),
+  unit: Joi.string().max(30).allow('', null),
+  previous_period_label: Joi.string().max(30).required(),
+  previous_value: Joi.number().required(),
+  current_period_label: Joi.string().max(30).required(),
+  current_value: Joi.number().required(),
+  sort_order: Joi.number().integer().default(0),
+});
+
+const resourceConsumptionPutSchema = resourceConsumptionCreateSchema;
+
+const resourceConsumptionPatchSchema = Joi.object({
+  resource_name: Joi.string().max(150),
+  unit: Joi.string().max(30).allow('', null),
+  previous_period_label: Joi.string().max(30),
+  previous_value: Joi.number(),
+  current_period_label: Joi.string().max(30),
+  current_value: Joi.number(),
+  sort_order: Joi.number().integer(),
+}).min(1);
+
 module.exports = {
   incidentCreateSchema,
   incidentPutSchema,
@@ -122,4 +186,11 @@ module.exports = {
   inspectionPatchSchema,
   checklistItemPatchSchema,
   validateBody,
+  complianceSummaryPatchSchema,
+  summaryItemCreateSchema,
+  summaryItemPutSchema,
+  summaryItemPatchSchema,
+  resourceConsumptionCreateSchema,
+  resourceConsumptionPutSchema,
+  resourceConsumptionPatchSchema,
 };
