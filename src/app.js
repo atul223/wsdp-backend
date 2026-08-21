@@ -19,6 +19,9 @@ const ehsInspectionRoutes = require('./modules/ehs/ehsInspection.routes');
 
 const riskRoutes = require('./modules/risk-delay/risk.routes');
 const delayRoutes = require('./modules/risk-delay/delay.routes');
+const ncrRoutes = require('./modules/risk-delay/ncr.routes');
+const correctiveActionRoutes = require('./modules/risk-delay/correctiveAction.routes');
+const riskDelaySummaryRoutes = require('./modules/risk-delay/riskDelaySummary.routes');
 
 const resourceRoutes = require('./modules/resource-dashboard/resource.routes');
 const allocationRoutes = require('./modules/resource-dashboard/allocation.routes');
@@ -75,6 +78,9 @@ app.use('/api/v1/ehs', ehsInspectionRoutes);
 
 app.use('/api/v1', riskRoutes);
 app.use('/api/v1', delayRoutes);
+app.use('/api/v1', ncrRoutes);
+app.use('/api/v1', correctiveActionRoutes);
+app.use('/api/v1', riskDelaySummaryRoutes);
 
 app.use('/api/v1', resourceRoutes);
 app.use('/api/v1', allocationRoutes);

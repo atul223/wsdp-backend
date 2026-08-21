@@ -126,6 +126,9 @@ model Project {
   hdpePipeStocks          HdpePipeStock[]
   equipmentDeployments    EquipmentDeployment[]
   workforceEmployers      WorkforceEmployer[]
+  nonConformities         NonConformity[]
+  correctiveActions       CorrectiveAction[]
+  riskDelaySummary        RiskDelaySummary?
 
   @@map("projects")
 }
@@ -625,6 +628,61 @@ model WorkforceEmployer {
 
   @@index([projectId])
   @@map("workforce_employers")
+}
+
+// -----------------------------------------------------------------------
+// Risk & Delay Dashboard - Non-Conformity Register and Corrective Actions
+// Tracker. Added to give these two tables the same persistent
+// Add/Edit/Delete support that Risk and Delay already have, plus a
+// RiskDelaySummary table to optionally override the 4 KPI summary cards
+// (Projected Slippage, Open Delay Items, Mitigated This Quarter,
+// On Critical Path) instead of always auto-calculating them from Delay
+// records. A null field means "keep auto-calculating this card".
+// -----------------------------------------------------------------------
+
+model NonConformity {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  description String
+  owner       String
+  status      String    @default("open")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("non_conformities")
+}
+
+model CorrectiveAction {
+  id         String    @id @default(uuid())
+  projectId  String    @map("project_id")
+  action     String
+  owner      String
+  status     String    @default("pending")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("corrective_actions")
+}
+
+model RiskDelaySummary {
+  id                     String   @id @default(uuid())
+  projectId              String   @unique @map("project_id")
+  projectedSlippageDays  Int?     @map("projected_slippage_days")
+  openDelayItems         Int?     @map("open_delay_items")
+  mitigatedThisQuarter   Int?     @map("mitigated_this_quarter")
+  onCriticalPath         Int?     @map("on_critical_path")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("risk_delay_summaries")
 }
 
 model AuditLog {
