@@ -113,69 +113,78 @@ function validateBody(schema) {
   };
 }
 
-const Joi = require('joi');
-
-// ---- EHS Compliance Summary (the 7 KPI cards) ----
-const complianceSummaryPatchSchema = Joi.object({
-  overall_eshs_pct: Joi.number().min(0).max(100).allow(null),
-  pgas_esmp_pct: Joi.number().min(0).max(100).allow(null),
-  health_safety_plan_pct: Joi.number().min(0).max(100).allow(null),
-  site_management_plan_pct: Joi.number().min(0).max(100).allow(null),
-  method_statements_pct: Joi.number().min(0).max(100).allow(null),
-  open_incidents_override: Joi.number().integer().min(0).allow(null),
-  open_incidents_note: Joi.string().allow('', null),
-  toolbox_talks_30d_override: Joi.number().integer().min(0).allow(null),
-  toolbox_talks_30d_note: Joi.string().allow('', null),
-}).min(1);
+const complianceSummaryPatchSchema = z
+  .object({
+    overall_eshs_pct: z.number().min(0).max(100).nullable().optional(),
+    pgas_esmp_pct: z.number().min(0).max(100).nullable().optional(),
+    health_safety_plan_pct: z.number().min(0).max(100).nullable().optional(),
+    site_management_plan_pct: z.number().min(0).max(100).nullable().optional(),
+    method_statements_pct: z.number().min(0).max(100).nullable().optional(),
+    open_incidents_override: z.number().int().min(0).nullable().optional(),
+    open_incidents_note: z.string().max(500).nullable().optional(),
+    toolbox_talks_30d_override: z.number().int().min(0).nullable().optional(),
+    toolbox_talks_30d_note: z.string().max(500).nullable().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
 
 // ---- EHS Incident Summary items / Non-Conformity Summary items ----
 // (shared shape: Type / Count / Details / Status)
-const summaryItemCreateSchema = Joi.object({
-  type: Joi.string().max(150).required(),
-  count: Joi.number().integer().min(0).default(0),
-  details: Joi.string().allow('', null),
-  status: Joi.string().max(50).required(),
-  sort_order: Joi.number().integer().default(0),
+const summaryItemCreateSchema = z.object({
+  type: z.string().min(1).max(150),
+  count: z.number().int().min(0).default(0),
+  details: z.string().max(1000).nullable().optional(),
+  status: z.string().min(1).max(50),
+  sort_order: z.number().int().default(0),
 });
 
-const summaryItemPutSchema = Joi.object({
-  type: Joi.string().max(150).required(),
-  count: Joi.number().integer().min(0).required(),
-  details: Joi.string().allow('', null),
-  status: Joi.string().max(50).required(),
-  sort_order: Joi.number().integer(),
+const summaryItemPutSchema = z.object({
+  type: z.string().min(1).max(150),
+  count: z.number().int().min(0),
+  details: z.string().max(1000).nullable().optional(),
+  status: z.string().min(1).max(50),
+  sort_order: z.number().int().optional(),
 });
 
-const summaryItemPatchSchema = Joi.object({
-  type: Joi.string().max(150),
-  count: Joi.number().integer().min(0),
-  details: Joi.string().allow('', null),
-  status: Joi.string().max(50),
-  sort_order: Joi.number().integer(),
-}).min(1);
+const summaryItemPatchSchema = z
+  .object({
+    type: z.string().min(1).max(150).optional(),
+    count: z.number().int().min(0).optional(),
+    details: z.string().max(1000).nullable().optional(),
+    status: z.string().min(1).max(50).optional(),
+    sort_order: z.number().int().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
 
 // ---- EHS Resource Consumption ----
-const resourceConsumptionCreateSchema = Joi.object({
-  resource_name: Joi.string().max(150).required(),
-  unit: Joi.string().max(30).allow('', null),
-  previous_period_label: Joi.string().max(30).required(),
-  previous_value: Joi.number().required(),
-  current_period_label: Joi.string().max(30).required(),
-  current_value: Joi.number().required(),
-  sort_order: Joi.number().integer().default(0),
+const resourceConsumptionCreateSchema = z.object({
+  resource_name: z.string().min(1).max(150),
+  unit: z.string().max(30).nullable().optional(),
+  previous_period_label: z.string().min(1).max(30),
+  previous_value: z.number(),
+  current_period_label: z.string().min(1).max(30),
+  current_value: z.number(),
+  sort_order: z.number().int().default(0),
 });
 
 const resourceConsumptionPutSchema = resourceConsumptionCreateSchema;
 
-const resourceConsumptionPatchSchema = Joi.object({
-  resource_name: Joi.string().max(150),
-  unit: Joi.string().max(30).allow('', null),
-  previous_period_label: Joi.string().max(30),
-  previous_value: Joi.number(),
-  current_period_label: Joi.string().max(30),
-  current_value: Joi.number(),
-  sort_order: Joi.number().integer(),
-}).min(1);
+const resourceConsumptionPatchSchema = z
+  .object({
+    resource_name: z.string().min(1).max(150).optional(),
+    unit: z.string().max(30).nullable().optional(),
+    previous_period_label: z.string().min(1).max(30).optional(),
+    previous_value: z.number().optional(),
+    current_period_label: z.string().min(1).max(30).optional(),
+    current_value: z.number().optional(),
+    sort_order: z.number().int().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
 
 module.exports = {
   incidentCreateSchema,
