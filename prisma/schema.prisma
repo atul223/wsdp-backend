@@ -95,44 +95,57 @@ model PasswordResetToken {
 }
 
 model Project {
-  id                      String                   @id @default(uuid())
-  name                    String
-  code                    String                   @unique
-  status                  String                   @default("planned")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  endDate                 DateTime?                @map("end_date") @db.Date
-  startDate               DateTime?                @map("start_date") @db.Date
-  amendments              Amendment[]
-  bankGuarantees          BankGuarantee[]
-  bridgeCrossings         BridgeCrossing[]
-  budgets                 Budget[]
-  constructionSnapshots   ConstructionSnapshot[]
-  delays                  Delay[]
-  ehsIncidents            EhsIncident[]
-  ehsInspections          EhsInspection[]
-  houseConnectionClusters HouseConnectionCluster[]
-  ipcs                    Ipc[]
-  methodStatements        MethodStatement[]
-  paymentTrackingItems    PaymentTrackingItem[]
-  periodicReports         PeriodicReport[]
-  pipelineSections        PipelineSection[]
-  members                 ProjectMember[]
-  reports                 Report[]
-  resources               Resource[]
-  risks                   Risk[]
-  testingActivities       TestingActivity[]
-  valveChamberSummary     ValveChamberSummary?
-  workPackages            WorkPackage[]
-  hdpePipeStocks          HdpePipeStock[]
-  equipmentDeployments    EquipmentDeployment[]
-  workforceEmployers      WorkforceEmployer[]
-  nonConformities         NonConformity[]
-  correctiveActions       CorrectiveAction[]
-  riskDelaySummary        RiskDelaySummary?
-  ehsComplianceSummary    EhsComplianceSummary?
-  ehsIncidentSummaryItems EhsIncidentSummaryItem[]
-  ehsNonConformityItems   EhsNonConformitySummaryItem[]
-  ehsResourceConsumptions EhsResourceConsumption[]
+  id                       String                        @id @default(uuid())
+  name                     String
+  code                     String                        @unique
+  status                   String                        @default("planned")
+  createdAt                DateTime                      @default(now()) @map("created_at")
+  endDate                  DateTime?                     @map("end_date") @db.Date
+  startDate                DateTime?                     @map("start_date") @db.Date
+  amendments               Amendment[]
+  bankGuarantees           BankGuarantee[]
+  bridgeCrossings          BridgeCrossing[]
+  budgets                  Budget[]
+  constructionSnapshots    ConstructionSnapshot[]
+  delays                   Delay[]
+  ehsIncidents             EhsIncident[]
+  ehsInspections           EhsInspection[]
+  houseConnectionClusters  HouseConnectionCluster[]
+  ipcs                     Ipc[]
+  methodStatements         MethodStatement[]
+  paymentTrackingItems     PaymentTrackingItem[]
+  periodicReports          PeriodicReport[]
+  pipelineSections         PipelineSection[]
+  members                  ProjectMember[]
+  reports                  Report[]
+  resources                Resource[]
+  risks                    Risk[]
+  testingActivities        TestingActivity[]
+  valveChamberSummary      ValveChamberSummary?
+  workPackages             WorkPackage[]
+  hdpePipeStocks           HdpePipeStock[]
+  equipmentDeployments     EquipmentDeployment[]
+  workforceEmployers       WorkforceEmployer[]
+  nonConformities          NonConformity[]
+  correctiveActions        CorrectiveAction[]
+  riskDelaySummary         RiskDelaySummary?
+  ehsComplianceSummary     EhsComplianceSummary?
+  ehsIncidentSummaryItems  EhsIncidentSummaryItem[]
+  ehsNonConformityItems    EhsNonConformitySummaryItem[]
+  ehsResourceConsumptions  EhsResourceConsumption[]
+
+  // --------------------------------------------------------------------
+  // Construction Progress module — Area-wise / Pipe Diameter Wise /
+  // Activity Wise Progress tables + Pipeline & House Connection KPI
+  // card summary overrides. Added to give these tables/cards the same
+  // persistent Add/Edit/Delete/Update support as Testing Activities,
+  // Bridge Crossings and Valve Chamber Summary already have.
+  // --------------------------------------------------------------------
+  areaWiseProgress         AreaWiseProgress[]
+  pipeDiameterProgress     PipeDiameterProgress[]
+  activityWiseProgress     ActivityWiseProgress[]
+  pipelineProgressSummary  PipelineProgressSummary?
+  houseConnectionSummary   HouseConnectionSummary?
 
   @@map("projects")
 }
@@ -576,6 +589,91 @@ model MethodStatement {
 }
 
 // -----------------------------------------------------------------------
+// Construction Progress module — Area-wise Progress / Pipe Diameter Wise
+// Progress / Activity Wise Progress tables, plus Pipeline & House
+// Connection KPI-card summary overrides. All support full Add / Edit /
+// Delete (soft delete via deletedAt, same pattern as the Resource
+// Dashboard's HDPE Pipe Stock / Equipment Deployment tables) so that
+// edits made on the module persist across reloads.
+// -----------------------------------------------------------------------
+
+model AreaWiseProgress {
+  id           String    @id @default(uuid())
+  projectId    String    @map("project_id")
+  area         String
+  designReport Decimal   @map("design_report_m") @db.Decimal(12, 2)
+  contract     Decimal   @map("contract_m") @db.Decimal(12, 2)
+  executed     Decimal   @map("executed_m") @db.Decimal(12, 2)
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("area_wise_progress")
+}
+
+model PipeDiameterProgress {
+  id             String    @id @default(uuid())
+  projectId      String    @map("project_id")
+  diameter       String
+  proposedLength Decimal   @map("proposed_length_m") @db.Decimal(12, 2)
+  executed       Decimal   @map("executed_m") @db.Decimal(12, 2)
+  sortOrder      Int       @default(0) @map("sort_order")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("pipe_diameter_progress")
+}
+
+model ActivityWiseProgress {
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  activity      String
+  previousMonth Decimal?  @map("previous_month") @db.Decimal(12, 2)
+  currentMonth  Decimal?  @map("current_month") @db.Decimal(12, 2)
+  cumulative    Decimal?  @db.Decimal(12, 2)
+  totalPercent  Decimal?  @map("total_percent") @db.Decimal(5, 2)
+  unit          String?
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("activity_wise_progress")
+}
+
+model PipelineProgressSummary {
+  id            String   @id @default(uuid())
+  projectId     String   @unique @map("project_id")
+  totalLengthKm Decimal  @map("total_length_km") @db.Decimal(10, 3)
+  laidKm        Decimal  @map("laid_km") @db.Decimal(10, 3)
+  hydroTestedKm Decimal  @map("hydro_tested_km") @db.Decimal(10, 3)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("pipeline_progress_summaries")
+}
+
+model HouseConnectionSummary {
+  id         String   @id @default(uuid())
+  projectId  String   @unique @map("project_id")
+  completed  Int
+  inProgress Int      @map("in_progress")
+  remaining  Int
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("house_connection_summaries")
+}
+
+// -----------------------------------------------------------------------
 // Resource Dashboard - reporting tables (formerly hardcoded on the frontend)
 // Added to give the Resource Dashboard's HDPE Pipe Stock, Equipment
 // Deployment, and Workforce By Employer tables the same persistent
@@ -677,14 +775,14 @@ model CorrectiveAction {
 }
 
 model RiskDelaySummary {
-  id                     String   @id @default(uuid())
-  projectId              String   @unique @map("project_id")
-  projectedSlippageDays  Int?     @map("projected_slippage_days")
-  openDelayItems         Int?     @map("open_delay_items")
-  mitigatedThisQuarter   Int?     @map("mitigated_this_quarter")
-  onCriticalPath         Int?     @map("on_critical_path")
-  updatedAt              DateTime @updatedAt @map("updated_at")
-  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(uuid())
+  projectId             String   @unique @map("project_id")
+  projectedSlippageDays Int?     @map("projected_slippage_days")
+  openDelayItems        Int?     @map("open_delay_items")
+  mitigatedThisQuarter  Int?     @map("mitigated_this_quarter")
+  onCriticalPath        Int?     @map("on_critical_path")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  project               Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("risk_delay_summaries")
 }
@@ -706,20 +804,20 @@ model RiskDelaySummary {
 // -----------------------------------------------------------------------
 
 model EhsComplianceSummary {
-  id                      String    @id @default(uuid())
-  projectId               String    @unique @map("project_id")
-  overallEshsPct          Decimal?  @map("overall_eshs_pct") @db.Decimal(5, 2)
-  pgasEsmpPct             Decimal?  @map("pgas_esmp_pct") @db.Decimal(5, 2)
-  healthSafetyPlanPct     Decimal?  @map("health_safety_plan_pct") @db.Decimal(5, 2)
-  siteManagementPlanPct   Decimal?  @map("site_management_plan_pct") @db.Decimal(5, 2)
-  methodStatementsPct     Decimal?  @map("method_statements_pct") @db.Decimal(5, 2)
-  openIncidentsOverride   Int?      @map("open_incidents_override")
-  openIncidentsNote       String?   @map("open_incidents_note")
-  toolboxTalks30dOverride Int?      @map("toolbox_talks_30d_override")
-  toolboxTalks30dNote     String?   @map("toolbox_talks_30d_note")
-  updatedBy               String?   @map("updated_by")
-  updatedAt               DateTime  @updatedAt @map("updated_at")
-  project                 Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                      String   @id @default(uuid())
+  projectId               String   @unique @map("project_id")
+  overallEshsPct          Decimal? @map("overall_eshs_pct") @db.Decimal(5, 2)
+  pgasEsmpPct             Decimal? @map("pgas_esmp_pct") @db.Decimal(5, 2)
+  healthSafetyPlanPct     Decimal? @map("health_safety_plan_pct") @db.Decimal(5, 2)
+  siteManagementPlanPct   Decimal? @map("site_management_plan_pct") @db.Decimal(5, 2)
+  methodStatementsPct     Decimal? @map("method_statements_pct") @db.Decimal(5, 2)
+  openIncidentsOverride   Int?     @map("open_incidents_override")
+  openIncidentsNote       String?  @map("open_incidents_note")
+  toolboxTalks30dOverride Int?     @map("toolbox_talks_30d_override")
+  toolboxTalks30dNote     String?  @map("toolbox_talks_30d_note")
+  updatedBy               String?  @map("updated_by")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  project                  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("ehs_compliance_summaries")
 }
@@ -759,19 +857,19 @@ model EhsNonConformitySummaryItem {
 }
 
 model EhsResourceConsumption {
-  id                 String    @id @default(uuid())
-  projectId          String    @map("project_id")
-  resourceName       String    @map("resource_name")
-  unit               String?
-  previousPeriodLabel String   @map("previous_period_label")
-  previousValue      Decimal   @map("previous_value") @db.Decimal(14, 2)
-  currentPeriodLabel String    @map("current_period_label")
-  currentValue       Decimal   @map("current_value") @db.Decimal(14, 2)
-  sortOrder          Int       @default(0) @map("sort_order")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  deletedAt          DateTime? @map("deleted_at")
-  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(uuid())
+  projectId           String    @map("project_id")
+  resourceName        String    @map("resource_name")
+  unit                String?
+  previousPeriodLabel String    @map("previous_period_label")
+  previousValue       Decimal   @map("previous_value") @db.Decimal(14, 2)
+  currentPeriodLabel  String    @map("current_period_label")
+  currentValue        Decimal   @map("current_value") @db.Decimal(14, 2)
+  sortOrder           Int       @default(0) @map("sort_order")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@map("ehs_resource_consumptions")

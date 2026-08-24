@@ -62,7 +62,7 @@ router.delete(
 );
 
 /* =========================
-   TESTING ACTIVITIES
+   TESTING ACTIVITIES (Pressure Testing Status)
 ========================= */
 
 router.post(
@@ -84,7 +84,7 @@ router.delete(
 );
 
 /* =========================
-   BRIDGE CROSSINGS
+   BRIDGE CROSSINGS (Bridge-Crossing Structure Progress)
 ========================= */
 
 router.post(
@@ -106,13 +106,95 @@ router.delete(
 );
 
 /* =========================
-   VALVE SUMMARY
+   VALVE SUMMARY (Valve Chamber Construction Progress)
 ========================= */
 
 router.put(
   '/valve-summary/:projectId',
   authenticate,
   controller.updateValveSummary
+);
+
+/* =========================
+   AREA-WISE PROGRESS
+========================= */
+
+router.post(
+  '/area-progress',
+  authenticate,
+  controller.createAreaProgress
+);
+
+router.put(
+  '/area-progress/:id',
+  authenticate,
+  controller.updateAreaProgress
+);
+
+router.delete(
+  '/area-progress/:id',
+  authenticate,
+  controller.deleteAreaProgress
+);
+
+/* =========================
+   PIPE DIAMETER WISE PROGRESS
+========================= */
+
+router.post(
+  '/pipe-diameter-progress',
+  authenticate,
+  controller.createPipeDiameterProgress
+);
+
+router.put(
+  '/pipe-diameter-progress/:id',
+  authenticate,
+  controller.updatePipeDiameterProgress
+);
+
+router.delete(
+  '/pipe-diameter-progress/:id',
+  authenticate,
+  controller.deletePipeDiameterProgress
+);
+
+/* =========================
+   ACTIVITY WISE PROGRESS
+========================= */
+
+router.post(
+  '/activity-progress',
+  authenticate,
+  controller.createActivityProgress
+);
+
+router.put(
+  '/activity-progress/:id',
+  authenticate,
+  controller.updateActivityProgress
+);
+
+router.delete(
+  '/activity-progress/:id',
+  authenticate,
+  controller.deleteActivityProgress
+);
+
+/* =========================
+   PIPELINE / HOUSE SUMMARY (KPI card overrides)
+========================= */
+
+router.put(
+  '/pipeline-summary/:projectId',
+  authenticate,
+  controller.updatePipelineSummary
+);
+
+router.put(
+  '/house-summary/:projectId',
+  authenticate,
+  controller.updateHouseSummary
 );
 
 module.exports = router;

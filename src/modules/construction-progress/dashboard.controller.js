@@ -180,6 +180,121 @@ async function updateValveSummary(req, res, next) {
   }
 }
 
+/* =========================
+   AREA-WISE PROGRESS
+========================= */
+
+async function createAreaProgress(req, res, next) {
+  try {
+    const data = await service.createAreaProgress(req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateAreaProgress(req, res, next) {
+  try {
+    const data = await service.updateAreaProgress(req.params.id, req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteAreaProgress(req, res, next) {
+  try {
+    await service.deleteAreaProgress(req.params.id);
+    return success(res, { message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/* =========================
+   PIPE DIAMETER WISE PROGRESS
+========================= */
+
+async function createPipeDiameterProgress(req, res, next) {
+  try {
+    const data = await service.createPipeDiameterProgress(req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updatePipeDiameterProgress(req, res, next) {
+  try {
+    const data = await service.updatePipeDiameterProgress(req.params.id, req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deletePipeDiameterProgress(req, res, next) {
+  try {
+    await service.deletePipeDiameterProgress(req.params.id);
+    return success(res, { message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/* =========================
+   ACTIVITY WISE PROGRESS
+========================= */
+
+async function createActivityProgress(req, res, next) {
+  try {
+    const data = await service.createActivityProgress(req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateActivityProgress(req, res, next) {
+  try {
+    const data = await service.updateActivityProgress(req.params.id, req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteActivityProgress(req, res, next) {
+  try {
+    await service.deleteActivityProgress(req.params.id);
+    return success(res, { message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/* =========================
+   PIPELINE / HOUSE SUMMARY (KPI cards)
+========================= */
+
+async function updatePipelineSummary(req, res, next) {
+  try {
+    const data = await service.updatePipelineSummary(req.params.projectId, req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateHouseSummary(req, res, next) {
+  try {
+    const data = await service.updateHouseSummary(req.params.projectId, req.body);
+    return success(res, { data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getDefaultProject,
   getDashboard,
@@ -201,4 +316,19 @@ module.exports = {
   deleteBridgeCrossing,
 
   updateValveSummary,
+
+  createAreaProgress,
+  updateAreaProgress,
+  deleteAreaProgress,
+
+  createPipeDiameterProgress,
+  updatePipeDiameterProgress,
+  deletePipeDiameterProgress,
+
+  createActivityProgress,
+  updateActivityProgress,
+  deleteActivityProgress,
+
+  updatePipelineSummary,
+  updateHouseSummary,
 };

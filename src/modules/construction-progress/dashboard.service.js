@@ -7,6 +7,10 @@ function toNumber(value) {
   return Number(value);
 }
 
+function round2(n) {
+  return Number(Number(n || 0).toFixed(2));
+}
+
 function normalizePipelineSection(section) {
   return {
     id: section.id,
@@ -77,6 +81,93 @@ function normalizeBridgeCrossing(crossing) {
     remarks: crossing.remarks,
     createdAt: crossing.createdAt,
     updatedAt: crossing.updatedAt,
+  };
+}
+
+/* =========================================================
+   NEW: Area-wise / Pipe Diameter Wise / Activity Wise Progress
+   ========================================================= */
+
+function normalizeAreaWiseProgress(row) {
+  const designReport = toNumber(row.designReport);
+  const contract = toNumber(row.contract);
+  const executed = toNumber(row.executed);
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    area: row.area,
+    designReport,
+    contract,
+    executed,
+    balance: round2(contract - executed),
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function normalizePipeDiameterProgress(row) {
+  const proposedLength = toNumber(row.proposedLength);
+  const executed = toNumber(row.executed);
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    diameter: row.diameter,
+    proposedLength,
+    executed,
+    balance: round2(proposedLength - executed),
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function normalizeActivityWiseProgress(row) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    activity: row.activity,
+    previousMonth: row.previousMonth === null ? null : toNumber(row.previousMonth),
+    currentMonth: row.currentMonth === null ? null : toNumber(row.currentMonth),
+    cumulative: row.cumulative === null ? null : toNumber(row.cumulative),
+    totalPercent: row.totalPercent === null ? null : toNumber(row.totalPercent),
+    unit: row.unit,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function normalizePipelineSummary(row) {
+  if (!row) return null;
+
+  const totalLengthKm = toNumber(row.totalLengthKm);
+  const laidKm = toNumber(row.laidKm);
+  const hydroTestedKm = toNumber(row.hydroTestedKm);
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    totalLengthKm,
+    laidKm,
+    hydroTestedKm,
+    remainingKm: round2(totalLengthKm - laidKm),
+    updatedAt: row.updatedAt,
+  };
+}
+
+function normalizeHouseSummary(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    completed: row.completed,
+    inProgress: row.inProgress,
+    remaining: row.remaining,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -156,6 +247,11 @@ async function getDashboard(projectId, user) {
     testing,
     valve,
     crossings,
+    areaProgress,
+    pipeDiameterProgress,
+    activityProgress,
+    pipelineSummary,
+    houseSummary,
   ] = await Promise.all([
     prisma.pipelineSection.findMany({
       where: { projectId },
@@ -180,6 +276,29 @@ async function getDashboard(projectId, user) {
       where: { projectId },
       orderBy: { createdAt: 'asc' },
     }),
+
+    prisma.areaWiseProgress.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { sortOrder: 'asc' },
+    }),
+
+    prisma.pipeDiameterProgress.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { sortOrder: 'asc' },
+    }),
+
+    prisma.activityWiseProgress.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { sortOrder: 'asc' },
+    }),
+
+    prisma.pipelineProgressSummary.findUnique({
+      where: { projectId },
+    }),
+
+    prisma.houseConnectionSummary.findUnique({
+      where: { projectId },
+    }),
   ]);
 
   const normalizedPipelineSections = pipelineSections.map(normalizePipelineSection);
@@ -187,6 +306,11 @@ async function getDashboard(projectId, user) {
   const normalizedTesting = testing.map(normalizeTestingActivity);
   const normalizedValve = normalizeValveSummary(valve);
   const normalizedCrossings = crossings.map(normalizeBridgeCrossing);
+  const normalizedAreaProgress = areaProgress.map(normalizeAreaWiseProgress);
+  const normalizedPipeDiameterProgress = pipeDiameterProgress.map(normalizePipeDiameterProgress);
+  const normalizedActivityProgress = activityProgress.map(normalizeActivityWiseProgress);
+  const normalizedPipelineSummary = normalizePipelineSummary(pipelineSummary);
+  const normalizedHouseSummary = normalizeHouseSummary(houseSummary);
 
   const totalLength = normalizedPipelineSections.reduce(
     (sum, x) => sum + Number(x.lengthKm || 0),
@@ -241,6 +365,15 @@ async function getDashboard(projectId, user) {
     testing: normalizedTesting,
     valve: normalizedValve,
     crossings: normalizedCrossings,
+
+    // Construction Progress module tables
+    area_progress: normalizedAreaProgress,
+    pipe_diameter_progress: normalizedPipeDiameterProgress,
+    activity_progress: normalizedActivityProgress,
+
+    // Construction Progress KPI card overrides
+    pipeline_summary: normalizedPipelineSummary,
+    house_summary: normalizedHouseSummary,
   };
 }
 
@@ -417,6 +550,170 @@ async function updateValveSummary(projectId, data) {
   );
 }
 
+/* =========================================================
+   NEW: Area-wise Progress CRUD
+   ========================================================= */
+
+async function createAreaProgress(data) {
+  return normalizeAreaWiseProgress(
+    await prisma.areaWiseProgress.create({
+      data: {
+        projectId: data.projectId,
+        area: data.area,
+        designReport: data.designReport,
+        contract: data.contract,
+        executed: data.executed,
+        sortOrder: data.sortOrder || 0,
+      },
+    })
+  );
+}
+
+async function updateAreaProgress(id, data) {
+  return normalizeAreaWiseProgress(
+    await prisma.areaWiseProgress.update({
+      where: { id },
+      data: {
+        area: data.area,
+        designReport: data.designReport,
+        contract: data.contract,
+        executed: data.executed,
+      },
+    })
+  );
+}
+
+async function deleteAreaProgress(id) {
+  return prisma.areaWiseProgress.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+}
+
+/* =========================================================
+   NEW: Pipe Diameter Wise Progress CRUD
+   ========================================================= */
+
+async function createPipeDiameterProgress(data) {
+  return normalizePipeDiameterProgress(
+    await prisma.pipeDiameterProgress.create({
+      data: {
+        projectId: data.projectId,
+        diameter: data.diameter,
+        proposedLength: data.proposedLength,
+        executed: data.executed,
+        sortOrder: data.sortOrder || 0,
+      },
+    })
+  );
+}
+
+async function updatePipeDiameterProgress(id, data) {
+  return normalizePipeDiameterProgress(
+    await prisma.pipeDiameterProgress.update({
+      where: { id },
+      data: {
+        diameter: data.diameter,
+        proposedLength: data.proposedLength,
+        executed: data.executed,
+      },
+    })
+  );
+}
+
+async function deletePipeDiameterProgress(id) {
+  return prisma.pipeDiameterProgress.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+}
+
+/* =========================================================
+   NEW: Activity Wise Progress CRUD
+   ========================================================= */
+
+async function createActivityProgress(data) {
+  return normalizeActivityWiseProgress(
+    await prisma.activityWiseProgress.create({
+      data: {
+        projectId: data.projectId,
+        activity: data.activity,
+        previousMonth: data.previousMonth,
+        currentMonth: data.currentMonth,
+        cumulative: data.cumulative,
+        totalPercent: data.totalPercent,
+        unit: data.unit || null,
+        sortOrder: data.sortOrder || 0,
+      },
+    })
+  );
+}
+
+async function updateActivityProgress(id, data) {
+  return normalizeActivityWiseProgress(
+    await prisma.activityWiseProgress.update({
+      where: { id },
+      data: {
+        activity: data.activity,
+        previousMonth: data.previousMonth,
+        currentMonth: data.currentMonth,
+        cumulative: data.cumulative,
+        totalPercent: data.totalPercent,
+        unit: data.unit || null,
+      },
+    })
+  );
+}
+
+async function deleteActivityProgress(id) {
+  return prisma.activityWiseProgress.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+}
+
+/* =========================================================
+   NEW: Pipeline / House Connection KPI-card summary overrides
+   ========================================================= */
+
+async function updatePipelineSummary(projectId, data) {
+  return normalizePipelineSummary(
+    await prisma.pipelineProgressSummary.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        totalLengthKm: data.totalLengthKm,
+        laidKm: data.laidKm,
+        hydroTestedKm: data.hydroTestedKm,
+      },
+      update: {
+        totalLengthKm: data.totalLengthKm,
+        laidKm: data.laidKm,
+        hydroTestedKm: data.hydroTestedKm,
+      },
+    })
+  );
+}
+
+async function updateHouseSummary(projectId, data) {
+  return normalizeHouseSummary(
+    await prisma.houseConnectionSummary.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        completed: data.completed,
+        inProgress: data.inProgress,
+        remaining: data.remaining,
+      },
+      update: {
+        completed: data.completed,
+        inProgress: data.inProgress,
+        remaining: data.remaining,
+      },
+    })
+  );
+}
+
 module.exports = {
   getDefaultProject,
   getDashboard,
@@ -438,4 +735,19 @@ module.exports = {
   deleteBridgeCrossing,
 
   updateValveSummary,
+
+  createAreaProgress,
+  updateAreaProgress,
+  deleteAreaProgress,
+
+  createPipeDiameterProgress,
+  updatePipeDiameterProgress,
+  deletePipeDiameterProgress,
+
+  createActivityProgress,
+  updateActivityProgress,
+  deleteActivityProgress,
+
+  updatePipelineSummary,
+  updateHouseSummary,
 };
