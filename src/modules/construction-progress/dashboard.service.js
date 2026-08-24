@@ -11,6 +11,154 @@ function round2(n) {
   return Number(Number(n || 0).toFixed(2));
 }
 
+/* =========================================================
+   SEED DATA
+   Source: 50CS3_LUBANGO_UCP-P_ENG_MR_Technical_July 2026 report
+
+   These are the same report-based starting figures previously
+   hardcoded on the frontend. On a project's very first dashboard
+   load, if a table has no rows yet, we persist these as real
+   database rows (see ensureSeeded below) so that every row has a
+   genuine id and can be edited/deleted from the module going
+   forward — instead of being shown as a read-only "Report data"
+   placeholder.
+   ========================================================= */
+
+const SEED_AREA_PROGRESS = [
+  { area: 'Casa Verde', designReport: 180, contract: 180, executed: 204 },
+  { area: 'Escola Portuguesa', designReport: 800, contract: 800, executed: 324 },
+  { area: 'Cowboy I', designReport: 0, contract: 0, executed: 0 },
+  { area: 'Sofrio', designReport: 2108, contract: 2108, executed: 798 },
+  { area: 'João de Almeida', designReport: 2500, contract: 2500, executed: 0 },
+  { area: 'Caixote ou Socombar', designReport: 500, contract: 500, executed: 342 },
+  { area: 'Arimba', designReport: 0, contract: 0, executed: 0 },
+];
+
+const SEED_PIPE_DIAMETER_PROGRESS = [
+  { diameter: 'De63 mm', proposedLength: 18796, executed: 16877 },
+  { diameter: 'De75 mm', proposedLength: 1078, executed: 768 },
+  { diameter: 'De90 mm', proposedLength: 6012, executed: 5277 },
+  { diameter: 'De110 mm', proposedLength: 2075, executed: 1236 },
+  { diameter: 'De160 mm PN10', proposedLength: 4929, executed: 2832 },
+  { diameter: 'De160 mm PN16', proposedLength: 299, executed: 0 },
+  { diameter: 'De200 mm', proposedLength: 1256, executed: 1152 },
+  { diameter: 'De250 mm', proposedLength: 2203, executed: 1966 },
+  { diameter: 'De315 mm', proposedLength: 1412, executed: 1092.5 },
+  { diameter: 'Steel Pipe', proposedLength: 79, executed: 0 },
+];
+
+const SEED_ACTIVITY_PROGRESS = [
+  { activity: 'Pipeline Installation', previousMonth: 29.5325, currentMonth: 1.668, cumulative: 31.2005, totalPercent: 44.6, unit: 'km' },
+  { activity: 'Hydro Testing', previousMonth: 0, currentMonth: 0, cumulative: 0, totalPercent: 0, unit: 'km' },
+  { activity: 'House Connections', previousMonth: 0, currentMonth: 0, cumulative: 0, totalPercent: 0, unit: 'Nos' },
+  { activity: 'Valve Chambers', previousMonth: 0, currentMonth: 0, cumulative: 0, totalPercent: 0, unit: 'Nos' },
+  { activity: 'Bridge Crossings', previousMonth: 0, currentMonth: 0, cumulative: 0, totalPercent: 0, unit: 'Nos (of 3 planned)' },
+];
+
+const SEED_TESTING_ACTIVITIES = [
+  { activityName: 'Pipeline Pressure Testing', plannedValue: 70.0, actualValue: 0, unit: 'km', status: 'Not Started' },
+  { activityName: 'Disinfection Testing', plannedValue: 70.0, actualValue: 0, unit: 'km', status: 'Not Started' },
+];
+
+const SEED_BRIDGE_CROSSINGS = [
+  { crossingName: 'As per Detailed Design', crossingType: 'River/Stream Crossing', method: '3 Nos Planned', status: 'Not Started', remarks: null },
+];
+
+/**
+ * Persists the report-based starting figures as real rows the very first
+ * time a project's dashboard is loaded (i.e. whenever a given table is
+ * still empty for that project). Wrapped in a single transaction with a
+ * count-check-then-create guard so normal repeated dashboard loads are a
+ * cheap no-op once seeded.
+ */
+async function ensureSeeded(projectId) {
+  await prisma.$transaction(async (tx) => {
+    const areaCount = await tx.areaWiseProgress.count({ where: { projectId, deletedAt: null } });
+    if (areaCount === 0) {
+      for (let i = 0; i < SEED_AREA_PROGRESS.length; i++) {
+        const item = SEED_AREA_PROGRESS[i];
+        await tx.areaWiseProgress.create({
+          data: {
+            projectId,
+            area: item.area,
+            designReport: item.designReport,
+            contract: item.contract,
+            executed: item.executed,
+            sortOrder: i,
+          },
+        });
+      }
+    }
+
+    const pipeCount = await tx.pipeDiameterProgress.count({ where: { projectId, deletedAt: null } });
+    if (pipeCount === 0) {
+      for (let i = 0; i < SEED_PIPE_DIAMETER_PROGRESS.length; i++) {
+        const item = SEED_PIPE_DIAMETER_PROGRESS[i];
+        await tx.pipeDiameterProgress.create({
+          data: {
+            projectId,
+            diameter: item.diameter,
+            proposedLength: item.proposedLength,
+            executed: item.executed,
+            sortOrder: i,
+          },
+        });
+      }
+    }
+
+    const activityCount = await tx.activityWiseProgress.count({ where: { projectId, deletedAt: null } });
+    if (activityCount === 0) {
+      for (let i = 0; i < SEED_ACTIVITY_PROGRESS.length; i++) {
+        const item = SEED_ACTIVITY_PROGRESS[i];
+        await tx.activityWiseProgress.create({
+          data: {
+            projectId,
+            activity: item.activity,
+            previousMonth: item.previousMonth,
+            currentMonth: item.currentMonth,
+            cumulative: item.cumulative,
+            totalPercent: item.totalPercent,
+            unit: item.unit,
+            sortOrder: i,
+          },
+        });
+      }
+    }
+
+    const testingCount = await tx.testingActivity.count({ where: { projectId } });
+    if (testingCount === 0) {
+      for (const item of SEED_TESTING_ACTIVITIES) {
+        await tx.testingActivity.create({
+          data: {
+            projectId,
+            activityName: item.activityName,
+            plannedValue: item.plannedValue,
+            actualValue: item.actualValue,
+            unit: item.unit,
+            status: item.status,
+          },
+        });
+      }
+    }
+
+    const bridgeCount = await tx.bridgeCrossing.count({ where: { projectId } });
+    if (bridgeCount === 0) {
+      for (const item of SEED_BRIDGE_CROSSINGS) {
+        await tx.bridgeCrossing.create({
+          data: {
+            projectId,
+            crossingName: item.crossingName,
+            crossingType: item.crossingType,
+            method: item.method,
+            status: item.status,
+            remarks: item.remarks || null,
+          },
+        });
+      }
+    }
+  });
+}
+
 function normalizePipelineSection(section) {
   return {
     id: section.id,
@@ -77,6 +225,10 @@ function normalizeBridgeCrossing(crossing) {
     crossingName: crossing.crossingName,
     crossingType: crossing.crossingType,
     method: crossing.method,
+    // `span` is an alias of `method` so the frontend's "Span" column always
+    // has a value regardless of which field name a given row was created
+    // with (older rows used the same underlying "method" column).
+    span: crossing.method,
     status: crossing.status,
     remarks: crossing.remarks,
     createdAt: crossing.createdAt,
@@ -85,7 +237,7 @@ function normalizeBridgeCrossing(crossing) {
 }
 
 /* =========================================================
-   NEW: Area-wise / Pipe Diameter Wise / Activity Wise Progress
+   Area-wise / Pipe Diameter Wise / Activity Wise Progress
    ========================================================= */
 
 function normalizeAreaWiseProgress(row) {
@@ -240,6 +392,10 @@ async function getDashboard(projectId, user) {
   if (!canAccessProject(user, projectId)) {
     throw AppError.forbidden('You do not have access to this project');
   }
+
+  // Persist report-based starting figures as real, editable rows the first
+  // time this project's dashboard is loaded (no-op on every load after).
+  await ensureSeeded(projectId);
 
   const [
     pipelineSections,
@@ -551,7 +707,7 @@ async function updateValveSummary(projectId, data) {
 }
 
 /* =========================================================
-   NEW: Area-wise Progress CRUD
+   Area-wise Progress CRUD
    ========================================================= */
 
 async function createAreaProgress(data) {
@@ -591,7 +747,7 @@ async function deleteAreaProgress(id) {
 }
 
 /* =========================================================
-   NEW: Pipe Diameter Wise Progress CRUD
+   Pipe Diameter Wise Progress CRUD
    ========================================================= */
 
 async function createPipeDiameterProgress(data) {
@@ -629,7 +785,7 @@ async function deletePipeDiameterProgress(id) {
 }
 
 /* =========================================================
-   NEW: Activity Wise Progress CRUD
+   Activity Wise Progress CRUD
    ========================================================= */
 
 async function createActivityProgress(data) {
@@ -673,7 +829,7 @@ async function deleteActivityProgress(id) {
 }
 
 /* =========================================================
-   NEW: Pipeline / House Connection KPI-card summary overrides
+   Pipeline / House Connection KPI-card summary overrides
    ========================================================= */
 
 async function updatePipelineSummary(projectId, data) {
