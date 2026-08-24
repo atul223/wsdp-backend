@@ -15,28 +15,6 @@ function round2(n) {
 /* =========================================================
    SEED DATA
    Source: 50CS3_LUBANGO_UCP-P_ENG_MR_Technical_July 2026 report
-
-   Persisted as real database rows the very first time a project's
-   dashboard is loaded (see ensureSeeded below), so every row shown on
-   the module has a genuine id and can be edited/deleted going forward.
-
-   *** CRITICAL RELIABILITY FIX ***
-   ensureSeeded() previously ran un-guarded at the top of getDashboard().
-   If it threw for ANY reason — a Render cold-start connection hiccup, a
-   brief Supabase pooler blip, a race condition between two near-
-   simultaneous first-loads — the error propagated all the way up and
-   the ENTIRE GET /dashboard/:projectId call failed. When that GET
-   failed, the frontend's safety-net rendered the ORIGINAL hardcoded
-   report constants (not the real database state) so the page was never
-   left blank. The result: a single transient blip on ONE request could
-   make a user's already-saved edits appear to "revert to old data"
-   after a refresh, even though the edit was safely persisted in
-   Postgres the entire time.
-
-   Fixed by wrapping the ensureSeeded() call (and each of its 5
-   independent seed blocks) in its own try/catch. A seeding failure is
-   now only ever logged — it can NEVER cause the real dashboard read to
-   fail or mask genuinely persisted data.
    ========================================================= */
 
 const SEED_AREA_PROGRESS = [
@@ -79,12 +57,6 @@ const SEED_BRIDGE_CROSSINGS = [
   { crossingName: 'As per Detailed Design', crossingType: 'River/Stream Crossing', method: '3 Nos Planned', status: 'Not Started', remarks: null },
 ];
 
-/**
- * Seeds a single table if empty. Fully self-contained: any error here is
- * caught, logged, and swallowed — it can never bubble up and break the
- * caller. Returns nothing meaningful; success/failure is only observable
- * via logs.
- */
 async function seedTableIfEmpty({ label, countFn, createFn }) {
   try {
     const count = await countFn();
@@ -93,20 +65,10 @@ async function seedTableIfEmpty({ label, countFn, createFn }) {
     await createFn();
     logger.info(`[construction-progress] seeded ${label}`);
   } catch (err) {
-    // Seeding is best-effort only. Never let a seeding failure (cold
-    // start hiccup, transient connection error, race condition, etc.)
-    // break the dashboard read that's waiting on this.
     logger.error(`[construction-progress] failed to seed ${label}: ${err.message}`);
   }
 }
 
-/**
- * Persists the report-based starting figures as real rows the very first
- * time a project's dashboard is loaded. Entirely best-effort: every
- * individual table seed is isolated via seedTableIfEmpty, and the whole
- * function is additionally wrapped by its caller (getDashboard) in a
- * try/catch, so this can NEVER cause the dashboard GET to fail.
- */
 async function ensureSeeded(projectId) {
   await Promise.all([
     seedTableIfEmpty({
@@ -359,6 +321,24 @@ function canAccessProject(user, projectId) {
   return Array.isArray(user.projectIds) && user.projectIds.includes(projectId);
 }
 
+/**
+ * *** ROOT-CAUSE FIX ***
+ * Previously ordered ONLY by `createdAt: 'asc'`. If two Project rows ever
+ * share the same createdAt timestamp (very common when a project is
+ * seeded/migrated in a single batch), PostgreSQL does NOT guarantee a
+ * stable tie-break order — different calls to this exact same query can
+ * legitimately return a DIFFERENT project row.
+ *
+ * Symptom this produces: you Add a row against Project A (resolved on
+ * page load #1). On refresh, this function silently resolves to Project
+ * B instead (a tied duplicate). The dashboard then genuinely queries
+ * Project B's data — which never had your new row — so it looks exactly
+ * like "my edit reverted", even though it's still safely sitting under
+ * Project A in the database the entire time.
+ *
+ * Fixed by adding `id: 'asc'` as a secondary, always-unique sort key, so
+ * the SAME project is deterministically resolved on every single call.
+ */
 async function getDefaultProject(user) {
   let project = null;
 
@@ -369,9 +349,10 @@ async function getDefaultProject(user) {
           not: 'deleted',
         },
       },
-      orderBy: {
-        createdAt: 'asc',
-      },
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
     });
   } else {
     const projectIds = user.projectIds || [];
@@ -386,9 +367,10 @@ async function getDefaultProject(user) {
           in: projectIds,
         },
       },
-      orderBy: {
-        createdAt: 'asc',
-      },
+      orderBy: [
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
     });
   }
 
@@ -423,13 +405,6 @@ async function getDashboard(projectId, user) {
     throw AppError.forbidden('You do not have access to this project');
   }
 
-  // Persist report-based starting figures as real, editable rows the first
-  // time this project's dashboard is loaded. This is entirely best-effort:
-  // ensureSeeded() never throws (every internal step is individually
-  // caught and logged — see seedTableIfEmpty), but it is ALSO wrapped
-  // here in its own try/catch as a second, redundant safety net. Under NO
-  // circumstance should a seeding hiccup ever prevent the real dashboard
-  // data below from being read and returned.
   try {
     await ensureSeeded(projectId);
   } catch (err) {
@@ -474,17 +449,17 @@ async function getDashboard(projectId, user) {
 
     prisma.areaWiseProgress.findMany({
       where: { projectId, deletedAt: null },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     }),
 
     prisma.pipeDiameterProgress.findMany({
       where: { projectId, deletedAt: null },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     }),
 
     prisma.activityWiseProgress.findMany({
       where: { projectId, deletedAt: null },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     }),
 
     prisma.pipelineProgressSummary.findUnique({
@@ -749,18 +724,18 @@ async function updateValveSummary(projectId, data) {
 
 async function createAreaProgress(data) {
   try {
-    return normalizeAreaWiseProgress(
-      await prisma.areaWiseProgress.create({
-        data: {
-          projectId: data.projectId,
-          area: data.area,
-          designReport: data.designReport,
-          contract: data.contract,
-          executed: data.executed,
-          sortOrder: data.sortOrder || 0,
-        },
-      })
-    );
+    const row = await prisma.areaWiseProgress.create({
+      data: {
+        projectId: data.projectId,
+        area: data.area,
+        designReport: data.designReport,
+        contract: data.contract,
+        executed: data.executed,
+        sortOrder: data.sortOrder || 0,
+      },
+    });
+    logger.info(`[construction-progress] created area_wise_progress id=${row.id} projectId=${row.projectId} area=${row.area}`);
+    return normalizeAreaWiseProgress(row);
   } catch (err) {
     logger.error(`[construction-progress] createAreaProgress failed: ${err.message}`);
     throw err;
@@ -799,17 +774,17 @@ async function deleteAreaProgress(id) {
 
 async function createPipeDiameterProgress(data) {
   try {
-    return normalizePipeDiameterProgress(
-      await prisma.pipeDiameterProgress.create({
-        data: {
-          projectId: data.projectId,
-          diameter: data.diameter,
-          proposedLength: data.proposedLength,
-          executed: data.executed,
-          sortOrder: data.sortOrder || 0,
-        },
-      })
-    );
+    const row = await prisma.pipeDiameterProgress.create({
+      data: {
+        projectId: data.projectId,
+        diameter: data.diameter,
+        proposedLength: data.proposedLength,
+        executed: data.executed,
+        sortOrder: data.sortOrder || 0,
+      },
+    });
+    logger.info(`[construction-progress] created pipe_diameter_progress id=${row.id} projectId=${row.projectId} diameter=${row.diameter}`);
+    return normalizePipeDiameterProgress(row);
   } catch (err) {
     logger.error(`[construction-progress] createPipeDiameterProgress failed: ${err.message}`);
     throw err;
@@ -847,20 +822,20 @@ async function deletePipeDiameterProgress(id) {
 
 async function createActivityProgress(data) {
   try {
-    return normalizeActivityWiseProgress(
-      await prisma.activityWiseProgress.create({
-        data: {
-          projectId: data.projectId,
-          activity: data.activity,
-          previousMonth: data.previousMonth,
-          currentMonth: data.currentMonth,
-          cumulative: data.cumulative,
-          totalPercent: data.totalPercent,
-          unit: data.unit || null,
-          sortOrder: data.sortOrder || 0,
-        },
-      })
-    );
+    const row = await prisma.activityWiseProgress.create({
+      data: {
+        projectId: data.projectId,
+        activity: data.activity,
+        previousMonth: data.previousMonth,
+        currentMonth: data.currentMonth,
+        cumulative: data.cumulative,
+        totalPercent: data.totalPercent,
+        unit: data.unit || null,
+        sortOrder: data.sortOrder || 0,
+      },
+    });
+    logger.info(`[construction-progress] created activity_wise_progress id=${row.id} projectId=${row.projectId} activity=${row.activity}`);
+    return normalizeActivityWiseProgress(row);
   } catch (err) {
     logger.error(`[construction-progress] createActivityProgress failed: ${err.message}`);
     throw err;

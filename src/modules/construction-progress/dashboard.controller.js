@@ -1,8 +1,26 @@
 const service = require('./dashboard.service');
 const { success } = require('../../common/responses/apiResponse');
 
+/**
+ * *** ROOT-CAUSE FIX ***
+ * Forces every intermediary — browser HTTP cache, Cloudflare edge cache
+ * (this stack's frontend is served from a *.workers.dev / Cloudflare
+ * domain), any corporate/ISP proxy — to NEVER cache these GET responses.
+ *
+ * Without this, a cached response from BEFORE a user's Add/Edit can be
+ * replayed on refresh, making a successfully-saved row look like it
+ * "disappeared" even though it's still safely in the database.
+ */
+function setNoStore(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+}
+
 async function getDefaultProject(req, res, next) {
   try {
+    setNoStore(res);
     const data = await service.getDefaultProject(req.user);
     return success(res, { data });
   } catch (err) {
@@ -12,6 +30,7 @@ async function getDefaultProject(req, res, next) {
 
 async function getDashboard(req, res, next) {
   try {
+    setNoStore(res);
     const data = await service.getDashboard(
       req.params.projectId,
       req.user
