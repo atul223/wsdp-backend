@@ -1,6 +1,7 @@
 const prisma = require('../../config/db');
 const AppError = require('../../common/errors/AppError');
 const { GLOBAL_SCOPE_ROLES } = require('../../common/constants/roles');
+const logger = require('../../common/utils/logger');
 
 function toNumber(value) {
   if (value === null || value === undefined) return value;
@@ -19,21 +20,23 @@ function round2(n) {
    dashboard is loaded (see ensureSeeded below), so every row shown on
    the module has a genuine id and can be edited/deleted going forward.
 
-   PERFORMANCE / RELIABILITY NOTE:
-   Previously this ran 5 sequential existence-checks + row-by-row
-   creates inside a single transaction on EVERY dashboard load. On a
-   Render free-tier instance + Supabase pgbouncer pooler, that could
-   be slow enough to time out, which made the GET /dashboard call
-   fail. When that happened, the frontend's safety-net fallback
-   rendered the old hardcoded report values instead — which looked
-   exactly like "my edit reverted after refresh", even though the
-   edit itself had saved correctly moments earlier.
+   *** CRITICAL RELIABILITY FIX ***
+   ensureSeeded() previously ran un-guarded at the top of getDashboard().
+   If it threw for ANY reason — a Render cold-start connection hiccup, a
+   brief Supabase pooler blip, a race condition between two near-
+   simultaneous first-loads — the error propagated all the way up and
+   the ENTIRE GET /dashboard/:projectId call failed. When that GET
+   failed, the frontend's safety-net rendered the ORIGINAL hardcoded
+   report constants (not the real database state) so the page was never
+   left blank. The result: a single transient blip on ONE request could
+   make a user's already-saved edits appear to "revert to old data"
+   after a refresh, even though the edit was safely persisted in
+   Postgres the entire time.
 
-   Fixed by: (1) running the 5 existence checks in parallel instead of
-   sequentially, (2) skipping the transaction entirely once every
-   table already has rows (the steady-state case, i.e. every load
-   after the very first), and (3) using createMany (bulk insert)
-   instead of a per-row loop when seeding is actually needed.
+   Fixed by wrapping the ensureSeeded() call (and each of its 5
+   independent seed blocks) in its own try/catch. A seeding failure is
+   now only ever logged — it can NEVER cause the real dashboard read to
+   fail or mask genuinely persisted data.
    ========================================================= */
 
 const SEED_AREA_PROGRESS = [
@@ -76,88 +79,117 @@ const SEED_BRIDGE_CROSSINGS = [
   { crossingName: 'As per Detailed Design', crossingType: 'River/Stream Crossing', method: '3 Nos Planned', status: 'Not Started', remarks: null },
 ];
 
-async function ensureSeeded(projectId) {
-  const [areaCount, pipeCount, activityCount, testingCount, bridgeCount] = await Promise.all([
-    prisma.areaWiseProgress.count({ where: { projectId, deletedAt: null } }),
-    prisma.pipeDiameterProgress.count({ where: { projectId, deletedAt: null } }),
-    prisma.activityWiseProgress.count({ where: { projectId, deletedAt: null } }),
-    prisma.testingActivity.count({ where: { projectId } }),
-    prisma.bridgeCrossing.count({ where: { projectId } }),
-  ]);
+/**
+ * Seeds a single table if empty. Fully self-contained: any error here is
+ * caught, logged, and swallowed — it can never bubble up and break the
+ * caller. Returns nothing meaningful; success/failure is only observable
+ * via logs.
+ */
+async function seedTableIfEmpty({ label, countFn, createFn }) {
+  try {
+    const count = await countFn();
+    if (count > 0) return;
 
-  // Steady-state fast path: every table already has rows (true on every
-  // load after the very first) — skip the transaction entirely.
-  if (areaCount > 0 && pipeCount > 0 && activityCount > 0 && testingCount > 0 && bridgeCount > 0) {
-    return;
+    await createFn();
+    logger.info(`[construction-progress] seeded ${label}`);
+  } catch (err) {
+    // Seeding is best-effort only. Never let a seeding failure (cold
+    // start hiccup, transient connection error, race condition, etc.)
+    // break the dashboard read that's waiting on this.
+    logger.error(`[construction-progress] failed to seed ${label}: ${err.message}`);
   }
+}
 
-  await prisma.$transaction(async (tx) => {
-    if (areaCount === 0) {
-      await tx.areaWiseProgress.createMany({
-        data: SEED_AREA_PROGRESS.map((item, i) => ({
-          projectId,
-          area: item.area,
-          designReport: item.designReport,
-          contract: item.contract,
-          executed: item.executed,
-          sortOrder: i,
-        })),
-      });
-    }
+/**
+ * Persists the report-based starting figures as real rows the very first
+ * time a project's dashboard is loaded. Entirely best-effort: every
+ * individual table seed is isolated via seedTableIfEmpty, and the whole
+ * function is additionally wrapped by its caller (getDashboard) in a
+ * try/catch, so this can NEVER cause the dashboard GET to fail.
+ */
+async function ensureSeeded(projectId) {
+  await Promise.all([
+    seedTableIfEmpty({
+      label: 'area_wise_progress',
+      countFn: () => prisma.areaWiseProgress.count({ where: { projectId, deletedAt: null } }),
+      createFn: () =>
+        prisma.areaWiseProgress.createMany({
+          data: SEED_AREA_PROGRESS.map((item, i) => ({
+            projectId,
+            area: item.area,
+            designReport: item.designReport,
+            contract: item.contract,
+            executed: item.executed,
+            sortOrder: i,
+          })),
+        }),
+    }),
 
-    if (pipeCount === 0) {
-      await tx.pipeDiameterProgress.createMany({
-        data: SEED_PIPE_DIAMETER_PROGRESS.map((item, i) => ({
-          projectId,
-          diameter: item.diameter,
-          proposedLength: item.proposedLength,
-          executed: item.executed,
-          sortOrder: i,
-        })),
-      });
-    }
+    seedTableIfEmpty({
+      label: 'pipe_diameter_progress',
+      countFn: () => prisma.pipeDiameterProgress.count({ where: { projectId, deletedAt: null } }),
+      createFn: () =>
+        prisma.pipeDiameterProgress.createMany({
+          data: SEED_PIPE_DIAMETER_PROGRESS.map((item, i) => ({
+            projectId,
+            diameter: item.diameter,
+            proposedLength: item.proposedLength,
+            executed: item.executed,
+            sortOrder: i,
+          })),
+        }),
+    }),
 
-    if (activityCount === 0) {
-      await tx.activityWiseProgress.createMany({
-        data: SEED_ACTIVITY_PROGRESS.map((item, i) => ({
-          projectId,
-          activity: item.activity,
-          previousMonth: item.previousMonth,
-          currentMonth: item.currentMonth,
-          cumulative: item.cumulative,
-          totalPercent: item.totalPercent,
-          unit: item.unit,
-          sortOrder: i,
-        })),
-      });
-    }
+    seedTableIfEmpty({
+      label: 'activity_wise_progress',
+      countFn: () => prisma.activityWiseProgress.count({ where: { projectId, deletedAt: null } }),
+      createFn: () =>
+        prisma.activityWiseProgress.createMany({
+          data: SEED_ACTIVITY_PROGRESS.map((item, i) => ({
+            projectId,
+            activity: item.activity,
+            previousMonth: item.previousMonth,
+            currentMonth: item.currentMonth,
+            cumulative: item.cumulative,
+            totalPercent: item.totalPercent,
+            unit: item.unit,
+            sortOrder: i,
+          })),
+        }),
+    }),
 
-    if (testingCount === 0) {
-      await tx.testingActivity.createMany({
-        data: SEED_TESTING_ACTIVITIES.map((item) => ({
-          projectId,
-          activityName: item.activityName,
-          plannedValue: item.plannedValue,
-          actualValue: item.actualValue,
-          unit: item.unit,
-          status: item.status,
-        })),
-      });
-    }
+    seedTableIfEmpty({
+      label: 'testing_activities',
+      countFn: () => prisma.testingActivity.count({ where: { projectId } }),
+      createFn: () =>
+        prisma.testingActivity.createMany({
+          data: SEED_TESTING_ACTIVITIES.map((item) => ({
+            projectId,
+            activityName: item.activityName,
+            plannedValue: item.plannedValue,
+            actualValue: item.actualValue,
+            unit: item.unit,
+            status: item.status,
+          })),
+        }),
+    }),
 
-    if (bridgeCount === 0) {
-      await tx.bridgeCrossing.createMany({
-        data: SEED_BRIDGE_CROSSINGS.map((item) => ({
-          projectId,
-          crossingName: item.crossingName,
-          crossingType: item.crossingType,
-          method: item.method,
-          status: item.status,
-          remarks: item.remarks || null,
-        })),
-      });
-    }
-  });
+    seedTableIfEmpty({
+      label: 'bridge_crossings',
+      countFn: () => prisma.bridgeCrossing.count({ where: { projectId } }),
+      createFn: () =>
+        prisma.bridgeCrossing.createMany({
+          data: SEED_BRIDGE_CROSSINGS.map((item) => ({
+            projectId,
+            crossingName: item.crossingName,
+            crossingType: item.crossingType,
+            method: item.method,
+            status: item.status,
+            remarks: item.remarks || null,
+          })),
+        }),
+    }),
+  ]);
 }
 
 function normalizePipelineSection(section) {
@@ -392,8 +424,17 @@ async function getDashboard(projectId, user) {
   }
 
   // Persist report-based starting figures as real, editable rows the first
-  // time this project's dashboard is loaded. Fast no-op on every load after.
-  await ensureSeeded(projectId);
+  // time this project's dashboard is loaded. This is entirely best-effort:
+  // ensureSeeded() never throws (every internal step is individually
+  // caught and logged — see seedTableIfEmpty), but it is ALSO wrapped
+  // here in its own try/catch as a second, redundant safety net. Under NO
+  // circumstance should a seeding hiccup ever prevent the real dashboard
+  // data below from being read and returned.
+  try {
+    await ensureSeeded(projectId);
+  } catch (err) {
+    logger.error(`[construction-progress] ensureSeeded failed unexpectedly (ignored): ${err.message}`);
+  }
 
   const [
     pipelineSections,
@@ -707,32 +748,42 @@ async function updateValveSummary(projectId, data) {
    ========================================================= */
 
 async function createAreaProgress(data) {
-  return normalizeAreaWiseProgress(
-    await prisma.areaWiseProgress.create({
-      data: {
-        projectId: data.projectId,
-        area: data.area,
-        designReport: data.designReport,
-        contract: data.contract,
-        executed: data.executed,
-        sortOrder: data.sortOrder || 0,
-      },
-    })
-  );
+  try {
+    return normalizeAreaWiseProgress(
+      await prisma.areaWiseProgress.create({
+        data: {
+          projectId: data.projectId,
+          area: data.area,
+          designReport: data.designReport,
+          contract: data.contract,
+          executed: data.executed,
+          sortOrder: data.sortOrder || 0,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] createAreaProgress failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function updateAreaProgress(id, data) {
-  return normalizeAreaWiseProgress(
-    await prisma.areaWiseProgress.update({
-      where: { id },
-      data: {
-        area: data.area,
-        designReport: data.designReport,
-        contract: data.contract,
-        executed: data.executed,
-      },
-    })
-  );
+  try {
+    return normalizeAreaWiseProgress(
+      await prisma.areaWiseProgress.update({
+        where: { id },
+        data: {
+          area: data.area,
+          designReport: data.designReport,
+          contract: data.contract,
+          executed: data.executed,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] updateAreaProgress(${id}) failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function deleteAreaProgress(id) {
@@ -747,30 +798,40 @@ async function deleteAreaProgress(id) {
    ========================================================= */
 
 async function createPipeDiameterProgress(data) {
-  return normalizePipeDiameterProgress(
-    await prisma.pipeDiameterProgress.create({
-      data: {
-        projectId: data.projectId,
-        diameter: data.diameter,
-        proposedLength: data.proposedLength,
-        executed: data.executed,
-        sortOrder: data.sortOrder || 0,
-      },
-    })
-  );
+  try {
+    return normalizePipeDiameterProgress(
+      await prisma.pipeDiameterProgress.create({
+        data: {
+          projectId: data.projectId,
+          diameter: data.diameter,
+          proposedLength: data.proposedLength,
+          executed: data.executed,
+          sortOrder: data.sortOrder || 0,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] createPipeDiameterProgress failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function updatePipeDiameterProgress(id, data) {
-  return normalizePipeDiameterProgress(
-    await prisma.pipeDiameterProgress.update({
-      where: { id },
-      data: {
-        diameter: data.diameter,
-        proposedLength: data.proposedLength,
-        executed: data.executed,
-      },
-    })
-  );
+  try {
+    return normalizePipeDiameterProgress(
+      await prisma.pipeDiameterProgress.update({
+        where: { id },
+        data: {
+          diameter: data.diameter,
+          proposedLength: data.proposedLength,
+          executed: data.executed,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] updatePipeDiameterProgress(${id}) failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function deletePipeDiameterProgress(id) {
@@ -785,36 +846,46 @@ async function deletePipeDiameterProgress(id) {
    ========================================================= */
 
 async function createActivityProgress(data) {
-  return normalizeActivityWiseProgress(
-    await prisma.activityWiseProgress.create({
-      data: {
-        projectId: data.projectId,
-        activity: data.activity,
-        previousMonth: data.previousMonth,
-        currentMonth: data.currentMonth,
-        cumulative: data.cumulative,
-        totalPercent: data.totalPercent,
-        unit: data.unit || null,
-        sortOrder: data.sortOrder || 0,
-      },
-    })
-  );
+  try {
+    return normalizeActivityWiseProgress(
+      await prisma.activityWiseProgress.create({
+        data: {
+          projectId: data.projectId,
+          activity: data.activity,
+          previousMonth: data.previousMonth,
+          currentMonth: data.currentMonth,
+          cumulative: data.cumulative,
+          totalPercent: data.totalPercent,
+          unit: data.unit || null,
+          sortOrder: data.sortOrder || 0,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] createActivityProgress failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function updateActivityProgress(id, data) {
-  return normalizeActivityWiseProgress(
-    await prisma.activityWiseProgress.update({
-      where: { id },
-      data: {
-        activity: data.activity,
-        previousMonth: data.previousMonth,
-        currentMonth: data.currentMonth,
-        cumulative: data.cumulative,
-        totalPercent: data.totalPercent,
-        unit: data.unit || null,
-      },
-    })
-  );
+  try {
+    return normalizeActivityWiseProgress(
+      await prisma.activityWiseProgress.update({
+        where: { id },
+        data: {
+          activity: data.activity,
+          previousMonth: data.previousMonth,
+          currentMonth: data.currentMonth,
+          cumulative: data.cumulative,
+          totalPercent: data.totalPercent,
+          unit: data.unit || null,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error(`[construction-progress] updateActivityProgress(${id}) failed: ${err.message}`);
+    throw err;
+  }
 }
 
 async function deleteActivityProgress(id) {
