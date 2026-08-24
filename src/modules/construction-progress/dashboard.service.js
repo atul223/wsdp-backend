@@ -15,13 +15,25 @@ function round2(n) {
    SEED DATA
    Source: 50CS3_LUBANGO_UCP-P_ENG_MR_Technical_July 2026 report
 
-   These are the same report-based starting figures previously
-   hardcoded on the frontend. On a project's very first dashboard
-   load, if a table has no rows yet, we persist these as real
-   database rows (see ensureSeeded below) so that every row has a
-   genuine id and can be edited/deleted from the module going
-   forward — instead of being shown as a read-only "Report data"
-   placeholder.
+   Persisted as real database rows the very first time a project's
+   dashboard is loaded (see ensureSeeded below), so every row shown on
+   the module has a genuine id and can be edited/deleted going forward.
+
+   PERFORMANCE / RELIABILITY NOTE:
+   Previously this ran 5 sequential existence-checks + row-by-row
+   creates inside a single transaction on EVERY dashboard load. On a
+   Render free-tier instance + Supabase pgbouncer pooler, that could
+   be slow enough to time out, which made the GET /dashboard call
+   fail. When that happened, the frontend's safety-net fallback
+   rendered the old hardcoded report values instead — which looked
+   exactly like "my edit reverted after refresh", even though the
+   edit itself had saved correctly moments earlier.
+
+   Fixed by: (1) running the 5 existence checks in parallel instead of
+   sequentially, (2) skipping the transaction entirely once every
+   table already has rows (the steady-state case, i.e. every load
+   after the very first), and (3) using createMany (bulk insert)
+   instead of a per-row loop when seeding is actually needed.
    ========================================================= */
 
 const SEED_AREA_PROGRESS = [
@@ -64,97 +76,86 @@ const SEED_BRIDGE_CROSSINGS = [
   { crossingName: 'As per Detailed Design', crossingType: 'River/Stream Crossing', method: '3 Nos Planned', status: 'Not Started', remarks: null },
 ];
 
-/**
- * Persists the report-based starting figures as real rows the very first
- * time a project's dashboard is loaded (i.e. whenever a given table is
- * still empty for that project). Wrapped in a single transaction with a
- * count-check-then-create guard so normal repeated dashboard loads are a
- * cheap no-op once seeded.
- */
 async function ensureSeeded(projectId) {
+  const [areaCount, pipeCount, activityCount, testingCount, bridgeCount] = await Promise.all([
+    prisma.areaWiseProgress.count({ where: { projectId, deletedAt: null } }),
+    prisma.pipeDiameterProgress.count({ where: { projectId, deletedAt: null } }),
+    prisma.activityWiseProgress.count({ where: { projectId, deletedAt: null } }),
+    prisma.testingActivity.count({ where: { projectId } }),
+    prisma.bridgeCrossing.count({ where: { projectId } }),
+  ]);
+
+  // Steady-state fast path: every table already has rows (true on every
+  // load after the very first) — skip the transaction entirely.
+  if (areaCount > 0 && pipeCount > 0 && activityCount > 0 && testingCount > 0 && bridgeCount > 0) {
+    return;
+  }
+
   await prisma.$transaction(async (tx) => {
-    const areaCount = await tx.areaWiseProgress.count({ where: { projectId, deletedAt: null } });
     if (areaCount === 0) {
-      for (let i = 0; i < SEED_AREA_PROGRESS.length; i++) {
-        const item = SEED_AREA_PROGRESS[i];
-        await tx.areaWiseProgress.create({
-          data: {
-            projectId,
-            area: item.area,
-            designReport: item.designReport,
-            contract: item.contract,
-            executed: item.executed,
-            sortOrder: i,
-          },
-        });
-      }
+      await tx.areaWiseProgress.createMany({
+        data: SEED_AREA_PROGRESS.map((item, i) => ({
+          projectId,
+          area: item.area,
+          designReport: item.designReport,
+          contract: item.contract,
+          executed: item.executed,
+          sortOrder: i,
+        })),
+      });
     }
 
-    const pipeCount = await tx.pipeDiameterProgress.count({ where: { projectId, deletedAt: null } });
     if (pipeCount === 0) {
-      for (let i = 0; i < SEED_PIPE_DIAMETER_PROGRESS.length; i++) {
-        const item = SEED_PIPE_DIAMETER_PROGRESS[i];
-        await tx.pipeDiameterProgress.create({
-          data: {
-            projectId,
-            diameter: item.diameter,
-            proposedLength: item.proposedLength,
-            executed: item.executed,
-            sortOrder: i,
-          },
-        });
-      }
+      await tx.pipeDiameterProgress.createMany({
+        data: SEED_PIPE_DIAMETER_PROGRESS.map((item, i) => ({
+          projectId,
+          diameter: item.diameter,
+          proposedLength: item.proposedLength,
+          executed: item.executed,
+          sortOrder: i,
+        })),
+      });
     }
 
-    const activityCount = await tx.activityWiseProgress.count({ where: { projectId, deletedAt: null } });
     if (activityCount === 0) {
-      for (let i = 0; i < SEED_ACTIVITY_PROGRESS.length; i++) {
-        const item = SEED_ACTIVITY_PROGRESS[i];
-        await tx.activityWiseProgress.create({
-          data: {
-            projectId,
-            activity: item.activity,
-            previousMonth: item.previousMonth,
-            currentMonth: item.currentMonth,
-            cumulative: item.cumulative,
-            totalPercent: item.totalPercent,
-            unit: item.unit,
-            sortOrder: i,
-          },
-        });
-      }
+      await tx.activityWiseProgress.createMany({
+        data: SEED_ACTIVITY_PROGRESS.map((item, i) => ({
+          projectId,
+          activity: item.activity,
+          previousMonth: item.previousMonth,
+          currentMonth: item.currentMonth,
+          cumulative: item.cumulative,
+          totalPercent: item.totalPercent,
+          unit: item.unit,
+          sortOrder: i,
+        })),
+      });
     }
 
-    const testingCount = await tx.testingActivity.count({ where: { projectId } });
     if (testingCount === 0) {
-      for (const item of SEED_TESTING_ACTIVITIES) {
-        await tx.testingActivity.create({
-          data: {
-            projectId,
-            activityName: item.activityName,
-            plannedValue: item.plannedValue,
-            actualValue: item.actualValue,
-            unit: item.unit,
-            status: item.status,
-          },
-        });
-      }
+      await tx.testingActivity.createMany({
+        data: SEED_TESTING_ACTIVITIES.map((item) => ({
+          projectId,
+          activityName: item.activityName,
+          plannedValue: item.plannedValue,
+          actualValue: item.actualValue,
+          unit: item.unit,
+          status: item.status,
+        })),
+      });
     }
 
-    const bridgeCount = await tx.bridgeCrossing.count({ where: { projectId } });
     if (bridgeCount === 0) {
-      for (const item of SEED_BRIDGE_CROSSINGS) {
-        await tx.bridgeCrossing.create({
-          data: {
-            projectId,
-            crossingName: item.crossingName,
-            crossingType: item.crossingType,
-            method: item.method,
-            status: item.status,
-            remarks: item.remarks || null,
-          },
-        });
-      }
+      await tx.bridgeCrossing.createMany({
+        data: SEED_BRIDGE_CROSSINGS.map((item) => ({
+          projectId,
+          crossingName: item.crossingName,
+          crossingType: item.crossingType,
+          method: item.method,
+          status: item.status,
+          remarks: item.remarks || null,
+        })),
+      });
     }
   });
 }
@@ -225,9 +226,6 @@ function normalizeBridgeCrossing(crossing) {
     crossingName: crossing.crossingName,
     crossingType: crossing.crossingType,
     method: crossing.method,
-    // `span` is an alias of `method` so the frontend's "Span" column always
-    // has a value regardless of which field name a given row was created
-    // with (older rows used the same underlying "method" column).
     span: crossing.method,
     status: crossing.status,
     remarks: crossing.remarks,
@@ -394,7 +392,7 @@ async function getDashboard(projectId, user) {
   }
 
   // Persist report-based starting figures as real, editable rows the first
-  // time this project's dashboard is loaded (no-op on every load after).
+  // time this project's dashboard is loaded. Fast no-op on every load after.
   await ensureSeeded(projectId);
 
   const [
@@ -522,12 +520,10 @@ async function getDashboard(projectId, user) {
     valve: normalizedValve,
     crossings: normalizedCrossings,
 
-    // Construction Progress module tables
     area_progress: normalizedAreaProgress,
     pipe_diameter_progress: normalizedPipeDiameterProgress,
     activity_progress: normalizedActivityProgress,
 
-    // Construction Progress KPI card overrides
     pipeline_summary: normalizedPipelineSummary,
     house_summary: normalizedHouseSummary,
   };
