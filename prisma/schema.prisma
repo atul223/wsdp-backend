@@ -484,6 +484,7 @@ model PeriodicReport {
   document    String
   latestIssue String?   @map("latest_issue")
   status      String    @default("pending")
+  sortOrder   Int       @default(0) @map("sort_order")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
@@ -578,6 +579,7 @@ model MethodStatement {
   methodStatement String    @map("method_statement")
   statementDate   DateTime? @map("statement_date") @db.Date
   status          String    @default("pending")
+  sortOrder       Int       @default(0) @map("sort_order")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")

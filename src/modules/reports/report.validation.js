@@ -78,6 +78,61 @@ const reportPatchSchema = z
     }
   );
 
+/* ------------------------------------------------------------------
+   Periodic Reports — full CRUD validation
+   ------------------------------------------------------------------ */
+
+const periodicReportStatusEnum = z.enum(
+  ['draft', 'pending', 'issued', 'approved', 'archived'],
+  {
+    errorMap: () => ({
+      message: 'status must be one of: draft, pending, issued, approved, archived',
+    }),
+  }
+);
+
+const periodicReportCreateSchema = z.object({
+  document: z.string().min(2, 'document is required').max(200),
+  latest_issue: z.string().max(100).optional().nullable(),
+  status: periodicReportStatusEnum.default('pending'),
+});
+
+const periodicReportUpdateSchema = z
+  .object({
+    document: z.string().min(2).max(200).optional(),
+    latest_issue: z.string().max(100).optional().nullable(),
+    status: periodicReportStatusEnum.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field is required',
+  });
+
+/* ------------------------------------------------------------------
+   Method Statements — full CRUD validation
+   ------------------------------------------------------------------ */
+
+const methodStatementStatusEnum = z.enum(['pending', 'approved', 'archived'], {
+  errorMap: () => ({
+    message: 'status must be one of: pending, approved, archived',
+  }),
+});
+
+const methodStatementCreateSchema = z.object({
+  method_statement: z.string().min(2, 'method_statement is required').max(200),
+  date: isoDate.optional().nullable(),
+  status: methodStatementStatusEnum.default('pending'),
+});
+
+const methodStatementUpdateSchema = z
+  .object({
+    method_statement: z.string().min(2).max(200).optional(),
+    date: isoDate.optional().nullable(),
+    status: methodStatementStatusEnum.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field is required',
+  });
+
 function validateBody(schema) {
   return (req, res, next) => {
     const result = schema.safeParse(req.body);
@@ -107,5 +162,9 @@ module.exports = {
   reportCreateSchema,
   reportPutSchema,
   reportPatchSchema,
+  periodicReportCreateSchema,
+  periodicReportUpdateSchema,
+  methodStatementCreateSchema,
+  methodStatementUpdateSchema,
   validateBody,
 };

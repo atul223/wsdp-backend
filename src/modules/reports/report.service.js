@@ -43,30 +43,7 @@ function toPeriodicReportApiShape(item) {
     document: item.document,
     latest_issue: item.latestIssue || null,
     status: item.status,
-    created_at: item.createdAt,
-    updated_at: item.updatedAt,
-  };
-}
-
-function toIpcApiShape(item) {
-  return {
-    id: item.id,
-    project_id: item.projectId,
-    ipc: item.ipc,
-    date: libraryDateToApi(item.ipcDate),
-    status: item.status,
-    created_at: item.createdAt,
-    updated_at: item.updatedAt,
-  };
-}
-
-function toAmendmentApiShape(item) {
-  return {
-    id: item.id,
-    project_id: item.projectId,
-    amendment: item.amendment,
-    subject: item.subject,
-    status: item.status,
+    sort_order: item.sortOrder,
     created_at: item.createdAt,
     updated_at: item.updatedAt,
   };
@@ -79,12 +56,11 @@ function toMethodStatementApiShape(item) {
     method_statement: item.methodStatement,
     date: libraryDateToApi(item.statementDate),
     status: item.status,
+    sort_order: item.sortOrder,
     created_at: item.createdAt,
     updated_at: item.updatedAt,
   };
 }
-
-
 
 async function writeAuditLog({ userId, action, referenceId, ipAddress, oldValue, newValue }) {
   try {
@@ -177,6 +153,13 @@ async function listByProject(projectId, req) {
   };
 }
 
+/**
+ * Returns the library tables shown on the Reports module page.
+ * NOTE: IPCs and Amendments have been intentionally removed from this
+ * response — those tables now live exclusively on the Financial
+ * Dashboard module. The underlying Ipc / Amendment Prisma models and
+ * their Financial Dashboard routes/services are untouched.
+ */
 async function listLibraryByProject(projectId) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -186,58 +169,28 @@ async function listLibraryByProject(projectId) {
     throw AppError.notFound('Project not found');
   }
 
-  const [
-    periodicReports,
-    ipcs,
-    amendments,
-    methodStatements,
-  ] = await Promise.all([
+  const [periodicReports, methodStatements] = await Promise.all([
     prisma.periodicReport.findMany({
       where: {
         projectId,
         deletedAt: null,
       },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    }),
-    prisma.ipc.findMany({
-      where: {
-        projectId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    }),
-    prisma.amendment.findMany({
-      where: {
-        projectId,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     }),
     prisma.methodStatement.findMany({
       where: {
         projectId,
         deletedAt: null,
       },
-      orderBy: {
-        createdAt: 'asc',
-      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     }),
   ]);
 
   return {
     periodic_reports: periodicReports.map(toPeriodicReportApiShape),
-    ipcs: ipcs.map(toIpcApiShape),
-    amendments: amendments.map(toAmendmentApiShape),
     method_statements: methodStatements.map(toMethodStatementApiShape),
   };
 }
-
 
 async function getById(id) {
   const report = await prisma.report.findFirst({
@@ -409,6 +362,216 @@ async function getProjectIdForReport(reportId) {
   return report ? report.projectId : null;
 }
 
+/* ------------------------------------------------------------------
+   Periodic Reports — full CRUD
+   ------------------------------------------------------------------ */
+
+async function getNextSortOrder(model, projectId) {
+  const row = await prisma[model].findFirst({
+    where: { projectId, deletedAt: null },
+    orderBy: { sortOrder: 'desc' },
+    select: { sortOrder: true },
+  });
+
+  return row ? row.sortOrder + 1 : 0;
+}
+
+async function createPeriodicReport({ projectId, payload, userId, ipAddress }) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  if (!project) {
+    throw AppError.notFound('Project not found');
+  }
+
+  const sortOrder = await getNextSortOrder('periodicReport', projectId);
+
+  const item = await prisma.periodicReport.create({
+    data: {
+      projectId,
+      document: payload.document,
+      latestIssue: payload.latest_issue || null,
+      status: payload.status || 'pending',
+      sortOrder,
+    },
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'create',
+    referenceId: item.id,
+    ipAddress,
+    newValue: item,
+  });
+
+  return toPeriodicReportApiShape(item);
+}
+
+async function updatePeriodicReport({ id, payload, userId, ipAddress }) {
+  const existing = await prisma.periodicReport.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!existing) {
+    throw AppError.notFound('Periodic report not found');
+  }
+
+  const data = {};
+
+  if (payload.document !== undefined) data.document = payload.document;
+  if (payload.latest_issue !== undefined) data.latestIssue = payload.latest_issue || null;
+  if (payload.status !== undefined) data.status = payload.status;
+
+  const updated = await prisma.periodicReport.update({
+    where: { id },
+    data,
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'update',
+    referenceId: id,
+    ipAddress,
+    oldValue: existing,
+    newValue: updated,
+  });
+
+  return toPeriodicReportApiShape(updated);
+}
+
+async function removePeriodicReport({ id, userId, ipAddress }) {
+  const existing = await prisma.periodicReport.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!existing) {
+    throw AppError.notFound('Periodic report not found');
+  }
+
+  await prisma.periodicReport.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'delete',
+    referenceId: id,
+    ipAddress,
+    oldValue: existing,
+  });
+}
+
+async function getProjectIdForPeriodicReport(id) {
+  const item = await prisma.periodicReport.findFirst({
+    where: { id, deletedAt: null },
+    select: { projectId: true },
+  });
+
+  return item ? item.projectId : null;
+}
+
+/* ------------------------------------------------------------------
+   Method Statements — full CRUD
+   ------------------------------------------------------------------ */
+
+async function createMethodStatement({ projectId, payload, userId, ipAddress }) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  if (!project) {
+    throw AppError.notFound('Project not found');
+  }
+
+  const sortOrder = await getNextSortOrder('methodStatement', projectId);
+
+  const item = await prisma.methodStatement.create({
+    data: {
+      projectId,
+      methodStatement: payload.method_statement,
+      statementDate: toDateOrNull(payload.date),
+      status: payload.status || 'pending',
+      sortOrder,
+    },
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'create',
+    referenceId: item.id,
+    ipAddress,
+    newValue: item,
+  });
+
+  return toMethodStatementApiShape(item);
+}
+
+async function updateMethodStatement({ id, payload, userId, ipAddress }) {
+  const existing = await prisma.methodStatement.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!existing) {
+    throw AppError.notFound('Method statement not found');
+  }
+
+  const data = {};
+
+  if (payload.method_statement !== undefined) data.methodStatement = payload.method_statement;
+  if (payload.date !== undefined) data.statementDate = toDateOrNull(payload.date);
+  if (payload.status !== undefined) data.status = payload.status;
+
+  const updated = await prisma.methodStatement.update({
+    where: { id },
+    data,
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'update',
+    referenceId: id,
+    ipAddress,
+    oldValue: existing,
+    newValue: updated,
+  });
+
+  return toMethodStatementApiShape(updated);
+}
+
+async function removeMethodStatement({ id, userId, ipAddress }) {
+  const existing = await prisma.methodStatement.findFirst({
+    where: { id, deletedAt: null },
+  });
+
+  if (!existing) {
+    throw AppError.notFound('Method statement not found');
+  }
+
+  await prisma.methodStatement.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+
+  await writeAuditLog({
+    userId,
+    action: 'delete',
+    referenceId: id,
+    ipAddress,
+    oldValue: existing,
+  });
+}
+
+async function getProjectIdForMethodStatement(id) {
+  const item = await prisma.methodStatement.findFirst({
+    where: { id, deletedAt: null },
+    select: { projectId: true },
+  });
+
+  return item ? item.projectId : null;
+}
+
 function buildCsv(report) {
   const headers = [
     'Title',
@@ -554,4 +717,12 @@ module.exports = {
   remove,
   getProjectIdForReport,
   exportReport,
+  createPeriodicReport,
+  updatePeriodicReport,
+  removePeriodicReport,
+  getProjectIdForPeriodicReport,
+  createMethodStatement,
+  updateMethodStatement,
+  removeMethodStatement,
+  getProjectIdForMethodStatement,
 };
