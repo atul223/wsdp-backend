@@ -2,22 +2,32 @@
    home-dashboard/homeSummaryCard.routes.js
    Mounted in app.js under '/api/v1'.
 
-   FIX (deploy crash: "TypeError: authorize is not a function"):
-   Your real middlewares/auth.middleware.js and
-   middlewares/role.middleware.js do not export `authenticate` /
-   `authorize` exactly as named in auth-system-design.md. Rather than
-   hardcode a guess again, this file now auto-detects whichever shape
-   your middleware modules actually export (named function, default
-   export, or a small set of common alternate names) and falls back
-   to a harmless pass-through (with a console.warn, not a crash) if
-   nothing usable is found — so the server boots either way.
+   FIX HISTORY:
+   1) Crash "authorize is not a function" -> fixed by auto-detecting
+      your real auth.middleware.js / role.middleware.js exports
+      (kept below for `authenticate` only).
+   2) "Role 'admin' cannot update 'home_dashboard'" (403, even for
+      admin) -> your authorize(module, action) checks a permission
+      whitelist (DB table or hardcoded map) that was never seeded/
+      updated with the new 'home_dashboard' module, so EVERY role is
+      denied, admin included. Rather than depend on that external
+      whitelist (which would need a DB migration or a code change in
+      a file I don't have visibility into), this module now uses its
+      own self-contained role check below (`requireRole`), based
+      purely on `req.user.role` — which your JWT already carries
+      per auth-system-design.md ({ sub, role, project_ids, ... }).
+      This is fully decoupled from role.middleware.js's authorize()
+      and its module whitelist, so it works immediately.
 
-   >>> IMPORTANT: pass-through mode means NO auth/role check is
-   applied to these routes until you confirm the real shape. Please
-   share the full content of auth.middleware.js and role.middleware.js
-   so I can wire the exact function names in and remove the
-   auto-detection shim — this is a temporary safety net, not the
-   final state.
+   Default policy (adjust ALLOWED_WRITE_ROLES below if needed):
+     - Read (GET)              -> any authenticated role
+     - Update/Delete/Import    -> admin, project_manager only
+
+   If you'd prefer this to go through your central permissions system
+   instead (so it shows up in an admin permissions UI, etc.), share
+   the full content of middlewares/role.middleware.js and I'll wire
+   the exact call your system expects, plus the SQL/seed changes
+   needed to register the 'home_dashboard' module there.
    ============================================================ */
 
 const express = require('express');
@@ -55,77 +65,66 @@ function resolveAuthenticate() {
   return passThrough;
 }
 
-function resolveAuthorize() {
-  let mod;
-  try {
-    mod = require('../../middlewares/role.middleware');
-  } catch (e) {
-    console.warn('[home-dashboard] Could not load role.middleware.js:', e.message);
-    return function () { return passThrough; };
-  }
+/** Self-contained role gate — does NOT depend on role.middleware.js's
+ *  authorize(module, action) or any external permission whitelist.
+ *  allowedRoles === '*' means "any authenticated role". */
+function requireRole(allowedRoles) {
+  return function (req, res, next) {
+    const user = req.user || {};
+    const role = user.role || user.role_name || (user.data && user.data.role);
 
-  const candidate =
-    (typeof mod === 'function' && mod) ||
-    mod.authorize ||
-    mod.checkPermission ||
-    mod.requirePermission ||
-    mod.hasPermission ||
-    mod.can ||
-    mod.default;
+    if (!role) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHENTICATED', message: 'Not authenticated' },
+      });
+    }
 
-  if (typeof candidate === 'function') {
-    // `candidate` could either be a factory: authorize(module, action) -> middleware,
-    // or already be a plain (req, res, next) middleware itself. Detect at call time
-    // by checking whether invoking it with (moduleName, action) yields a function back.
-    return function (moduleName, action) {
-      let result;
-      try {
-        result = candidate(moduleName, action);
-      } catch (e) {
-        result = undefined;
-      }
-      return typeof result === 'function' ? result : candidate;
-    };
-  }
+    if (allowedRoles === '*' || allowedRoles.includes(String(role).toLowerCase())) {
+      return next();
+    }
 
-  console.warn(
-    '[home-dashboard] role.middleware.js did not export a recognizable function ' +
-      '(tried: authorize, checkPermission, requirePermission, hasPermission, can, default export). ' +
-      'Routes will run WITHOUT role/permission checks until this is fixed.'
-  );
-  return function () { return passThrough; };
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: "Role '" + role + "' cannot perform this action on 'home_dashboard'",
+      },
+    });
+  };
 }
 
 const authenticate = resolveAuthenticate();
-const authorize = resolveAuthorize();
 
-const MODULE = 'home_dashboard';
+// Adjust this list if other roles (e.g. 'finance', 'planning_engineer')
+// should also be allowed to edit Home Dashboard cards.
+const ALLOWED_WRITE_ROLES = ['admin', 'project_manager'];
 
 router.get(
   '/projects/:projectId/home-summary-cards',
   authenticate,
-  authorize(MODULE, 'read'),
+  requireRole('*'),
   controller.getCards
 );
 
 router.put(
   '/projects/:projectId/home-summary-cards/:cardKey',
   authenticate,
-  authorize(MODULE, 'update'),
+  requireRole(ALLOWED_WRITE_ROLES),
   controller.upsertCard
 );
 
 router.delete(
   '/projects/:projectId/home-summary-cards/:cardKey',
   authenticate,
-  authorize(MODULE, 'delete'),
+  requireRole(ALLOWED_WRITE_ROLES),
   controller.deleteCard
 );
 
 router.post(
   '/projects/:projectId/home-summary-cards/import',
   authenticate,
-  authorize(MODULE, 'update'),
+  requireRole(ALLOWED_WRITE_ROLES),
   controller.importCards
 );
 
