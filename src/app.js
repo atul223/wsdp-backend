@@ -44,6 +44,7 @@ const bankGuaranteeRoutes = require('./modules/financial-dashboard/bank-guarante
 const amendmentRoutes = require('./modules/financial-dashboard/amendment.routes');
 
 const reportRoutes = require('./modules/reports/report.routes');
+const homeSummaryCardRoutes = require('./modules/home-dashboard/homeSummaryCard.routes'); 
 
 const { mountSwagger } = require('./config/swagger');
 const { errorMiddleware, notFoundMiddleware } = require('./middlewares/error.middleware');
@@ -109,6 +110,7 @@ app.use('/api/v1', bankGuaranteeRoutes);
 app.use('/api/v1', amendmentRoutes);
 
 app.use('/api/v1', reportRoutes);
+app.use('/api/v1', homeSummaryCardRoutes);
 
 mountSwagger(app);
 

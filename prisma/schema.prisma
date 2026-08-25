@@ -134,6 +134,7 @@ model Project {
   ehsIncidentSummaryItems  EhsIncidentSummaryItem[]
   ehsNonConformityItems    EhsNonConformitySummaryItem[]
   ehsResourceConsumptions  EhsResourceConsumption[]
+  homeSummaryCards        HomeSummaryCard[]
 
   // --------------------------------------------------------------------
   // Construction Progress module — Area-wise / Pipe Diameter Wise /
@@ -308,6 +309,29 @@ model Budget {
   @@unique([projectId, category, fiscalYear])
   @@index([projectId])
   @@map("budgets")
+}
+
+model HomeSummaryCard {
+  id           String    @id @default(uuid())
+  projectId    String    @map("project_id")
+  cardKey      String    @map("card_key")
+  // "percent" | "number" | "text"  -> tells the frontend how to render/parse the value
+  valueType    String    @map("value_type")
+  // used when valueType is "percent" or "number"
+  valueNumber  Decimal?  @map("value_number") @db.Decimal(12, 2)
+  // used when valueType is "text" (e.g. "04 / 07", "01 ✓ / 02 ✓")
+  valueText    String?   @map("value_text")
+  // the small caption line under the big value (e.g. "Weighted across 6 activities")
+  deltaText    String?   @map("delta_text")
+  // decimal places to show for percent/number cards (0, 1 or 2 in this dashboard)
+  decimals     Int       @default(0)
+  updatedBy    String?   @map("updated_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, cardKey])
+  @@map("home_summary_cards")
 }
 
 model Invoice {
