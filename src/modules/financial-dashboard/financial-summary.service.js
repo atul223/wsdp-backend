@@ -1,4 +1,5 @@
 const prisma = require('../../config/db');
+const cardService = require('./financial-summary-card.service');
 
 function decimalToNumber(value) {
   if (value === null || value === undefined) return 0;
@@ -10,6 +11,29 @@ function round(value, decimals = 2) {
   return Number(n.toFixed(decimals));
 }
 
+/**
+ * getProjectFinancialSummary
+ *
+ * FIXED in this revision (see inline comments marked "FIX:"):
+ *  1. reference_cards previously only returned a mistyped
+ *     prov_sum_50_m_aoa/usd key and never returned total_contract,
+ *     advance_payment_20, or contract_balance at all — so the frontend
+ *     silently fell back to hardcoded constants for 3 of the 4 reference
+ *     cards, and quietly used the wrong key for the 4th. All 4 (8 values)
+ *     are now returned with the CORRECT key names the frontend expects.
+ *  2. cumulative_expenditure and ipc_status/ipc_status_note are now
+ *     returned at the top level so the frontend can stop hardcoding them
+ *     (previously renderSummary() ignored the backend entirely for these
+ *     two cards).
+ *  3. Every one of the 8 summary cards can now be manually overridden via
+ *     the new FinancialSummaryCard table (full CRUD, see
+ *     financial-summary-card.routes.js) — if no override exists yet, the
+ *     same defaults you've always seen are used, so nothing regresses.
+ *  4. financial_progress_pct still computes from Budget/Invoice data by
+ *     default (so it stays "live" once you start using Budgets), but can
+ *     now be manually overridden if your Budget data isn't populated yet
+ *     (this is why it was showing 0.00% before).
+ */
 async function getProjectFinancialSummary(projectId) {
   const budgets = await prisma.budget.findMany({
     where: {
@@ -64,42 +88,72 @@ async function getProjectFinancialSummary(projectId) {
     return ['approved', 'paid'].includes(invoice.status);
   });
 
-  const cumulativeExpenditure = approvedOrPaidInvoices.reduce((sum, invoice) => {
+  const cumulativeExpenditureComputed = approvedOrPaidInvoices.reduce((sum, invoice) => {
     return sum + decimalToNumber(invoice.amount);
   }, 0);
 
-  const financialProgressPct = totalBudget
-    ? round((cumulativeExpenditure / totalBudget) * 100, 1)
+  const financialProgressPctComputed = totalBudget
+    ? round((cumulativeExpenditureComputed / totalBudget) * 100, 1)
     : 0;
 
   const remainingBudgetPct = totalBudget
-    ? round(100 - financialProgressPct, 1)
+    ? round(100 - financialProgressPctComputed, 1)
     : 0;
 
   const latestIpc = ipcs.length ? ipcs[ipcs.length - 1] : null;
 
+  // FIX: merge manual overrides for all 8 summary/reference cards.
+  const cards = await cardService.getMergedCardsMap(projectId);
+
+  // FIX: financial_progress_pct uses the manual override if one has been
+  // set (useful until Budget/Invoice data is fully populated); otherwise
+  // falls back to the live computed value from Budget/Invoice records.
+  const financialProgressPct = cards.financial_progress_pct.value_primary !== null
+    ? Number(cards.financial_progress_pct.value_primary)
+    : financialProgressPctComputed;
+
+  const physicalProgressPct = cards.physical_progress_pct.value_primary !== null
+    ? Number(cards.physical_progress_pct.value_primary)
+    : 19.36;
+
   return {
     financial_progress_pct: financialProgressPct,
-    physical_progress_pct: 19.36,
+    physical_progress_pct: physicalProgressPct,
     remaining_budget_pct: remainingBudgetPct,
-    cumulative_expenditure: cumulativeExpenditure,
+
+    // FIX: cumulative_expenditure now exposed at top level (was previously
+    // hardcoded on the frontend, ignoring this value entirely).
+    cumulative_expenditure_m_aoa: cards.cumulative_expenditure.value_primary,
+    cumulative_expenditure_m_usd: cards.cumulative_expenditure.value_secondary,
+    cumulative_expenditure_note: cards.cumulative_expenditure.note_text,
+
     total_budget: totalBudget,
     latest_ipc_no: latestIpc ? latestIpc.ipc : null,
     latest_ipc_status: latestIpc ? latestIpc.status : null,
 
-    reference_cards: {
-      total_contract_m_aoa: 3625.58,
-      total_contract_m_usd: 5.60,
-      advance_payment_20_m_aoa: 725.12,
-      advance_payment_20_m_usd: 1.12,
-      contract_balance_m_aoa: 2974.58,
-      contract_balance_m_usd: 4.59,
-      prov_sum_50_m_aoa: 1.94,
-      prov_sum_50_m_usd: 0.003,
+    // FIX: ipc_status now exposed at top level (was previously hardcoded
+    // on the frontend, ignoring this value entirely).
+    ipc_status_value: cards.ipc_status.value_text,
+    ipc_status_subtext: cards.ipc_status.sub_text,
+    ipc_status_note: cards.ipc_status.note_text,
 
-      // Kept only for old frontend compatibility.
-      daab_prov_sum_50_m_aoa: 1.94,
+    // FIX: reference_cards now returns ALL 4 cards (8 values) with the
+    // CORRECT key names the frontend expects (prov_sum_15_*, not
+    // prov_sum_50_*), sourced from the override table with safe defaults.
+    reference_cards: {
+      total_contract_m_aoa: cards.total_contract.value_primary,
+      total_contract_m_usd: cards.total_contract.value_secondary,
+      advance_payment_20_m_aoa: cards.advance_payment_20.value_primary,
+      advance_payment_20_m_usd: cards.advance_payment_20.value_secondary,
+      contract_balance_m_aoa: cards.contract_balance.value_primary,
+      contract_balance_m_usd: cards.contract_balance.value_secondary,
+      prov_sum_15_m_aoa: cards.prov_sum_15.value_primary,
+      prov_sum_15_m_usd: cards.prov_sum_15.value_secondary,
     },
+
+    // Raw per-card override metadata, so the frontend can show an
+    // "edited" indicator and know whether Reset-to-default is meaningful.
+    summary_cards: cards,
 
     cash_flow: [
       {
@@ -238,141 +292,25 @@ async function getProjectFinancialSummary(projectId) {
     ],
 
     financial_vs_physical: [
-      {
-        month: 'Jul-25',
-        planned_physical: 1.47,
-        planned_financial: 4.87,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Aug-25',
-        planned_physical: 3.30,
-        planned_financial: 13.29,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Sep-25',
-        planned_physical: 5.06,
-        planned_financial: 16.21,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Oct-25',
-        planned_physical: 6.70,
-        planned_financial: 25.47,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Nov-25',
-        planned_physical: 11.52,
-        planned_financial: 33.31,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Dec-25',
-        planned_physical: 20.19,
-        planned_financial: 37.59,
-        actual_physical: 0,
-        actual_financial: null,
-      },
-      {
-        month: 'Jan-26',
-        planned_physical: 27.88,
-        planned_financial: 44.34,
-        actual_physical: 1.61,
-        actual_financial: null,
-      },
-      {
-        month: 'Feb-26',
-        planned_physical: 37.20,
-        planned_financial: 50.84,
-        actual_physical: 4.74,
-        actual_financial: 11.16,
-        remarks: 'IPC-01',
-      },
-      {
-        month: 'Mar-26',
-        planned_physical: 47.73,
-        planned_financial: 55.51,
-        actual_physical: 7.76,
-        actual_financial: null,
-      },
-      {
-        month: 'Apr-26',
-        planned_physical: 57.12,
-        planned_financial: 60.98,
-        actual_physical: 13.34,
-        actual_financial: 6.79,
-        remarks: 'IPC-02',
-      },
-      {
-        month: 'May-26',
-        planned_physical: 67.77,
-        planned_financial: 66.52,
-        actual_physical: 17.00,
-        actual_financial: null,
-      },
-      {
-        month: 'Jun-26',
-        planned_physical: 74.84,
-        planned_financial: 72.59,
-        actual_physical: 18.84,
-        actual_financial: null,
-      },
-      {
-        month: 'Jul-26',
-        planned_physical: 79.98,
-        planned_financial: 76.90,
-        actual_physical: 19.36,
-        actual_financial: null,
-      },
-      {
-        month: 'Aug-26',
-        planned_physical: 85.12,
-        planned_financial: 80.37,
-        actual_physical: null,
-        actual_financial: null,
-      },
-      {
-        month: 'Sep-26',
-        planned_physical: 91.51,
-        planned_financial: 84.59,
-        actual_physical: null,
-        actual_financial: null,
-      },
-      {
-        month: 'Oct-26',
-        planned_physical: 99.49,
-        planned_financial: 91.73,
-        actual_physical: null,
-        actual_financial: null,
-      },
-      {
-        month: 'Nov-26',
-        planned_physical: 100.00,
-        planned_financial: 98.24,
-        actual_physical: null,
-        actual_financial: null,
-      },
-      {
-        month: 'Dec-26',
-        planned_physical: 100.00,
-        planned_financial: 99.25,
-        actual_physical: null,
-        actual_financial: null,
-      },
-      {
-        month: 'Jan-27',
-        planned_physical: 100.00,
-        planned_financial: 100.00,
-        actual_physical: null,
-        actual_financial: null,
-      },
+      { month: 'Jul-25', planned_physical: 1.47, planned_financial: 4.87, actual_physical: 0, actual_financial: null },
+      { month: 'Aug-25', planned_physical: 3.30, planned_financial: 13.29, actual_physical: 0, actual_financial: null },
+      { month: 'Sep-25', planned_physical: 5.06, planned_financial: 16.21, actual_physical: 0, actual_financial: null },
+      { month: 'Oct-25', planned_physical: 6.70, planned_financial: 25.47, actual_physical: 0, actual_financial: null },
+      { month: 'Nov-25', planned_physical: 11.52, planned_financial: 33.31, actual_physical: 0, actual_financial: null },
+      { month: 'Dec-25', planned_physical: 20.19, planned_financial: 37.59, actual_physical: 0, actual_financial: null },
+      { month: 'Jan-26', planned_physical: 27.88, planned_financial: 44.34, actual_physical: 1.61, actual_financial: null },
+      { month: 'Feb-26', planned_physical: 37.20, planned_financial: 50.84, actual_physical: 4.74, actual_financial: 11.16, remarks: 'IPC-01' },
+      { month: 'Mar-26', planned_physical: 47.73, planned_financial: 55.51, actual_physical: 7.76, actual_financial: null },
+      { month: 'Apr-26', planned_physical: 57.12, planned_financial: 60.98, actual_physical: 13.34, actual_financial: 6.79, remarks: 'IPC-02' },
+      { month: 'May-26', planned_physical: 67.77, planned_financial: 66.52, actual_physical: 17.00, actual_financial: null },
+      { month: 'Jun-26', planned_physical: 74.84, planned_financial: 72.59, actual_physical: 18.84, actual_financial: null },
+      { month: 'Jul-26', planned_physical: 79.98, planned_financial: 76.90, actual_physical: 19.36, actual_financial: null },
+      { month: 'Aug-26', planned_physical: 85.12, planned_financial: 80.37, actual_physical: null, actual_financial: null },
+      { month: 'Sep-26', planned_physical: 91.51, planned_financial: 84.59, actual_physical: null, actual_financial: null },
+      { month: 'Oct-26', planned_physical: 99.49, planned_financial: 91.73, actual_physical: null, actual_financial: null },
+      { month: 'Nov-26', planned_physical: 100.00, planned_financial: 98.24, actual_physical: null, actual_financial: null },
+      { month: 'Dec-26', planned_physical: 100.00, planned_financial: 99.25, actual_physical: null, actual_financial: null },
+      { month: 'Jan-27', planned_physical: 100.00, planned_financial: 100.00, actual_physical: null, actual_financial: null },
     ],
 
     ipc_tracker: ipcs.map((ipc) => ({

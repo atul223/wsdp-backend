@@ -114,6 +114,7 @@ model Project {
   ipcs                     Ipc[]
   methodStatements         MethodStatement[]
   paymentTrackingItems     PaymentTrackingItem[]
+  financialSummaryCards FinancialSummaryCard[]
   periodicReports          PeriodicReport[]
   pipelineSections         PipelineSection[]
   members                  ProjectMember[]
@@ -552,6 +553,24 @@ model BankGuarantee {
   @@index([projectId])
   @@index([status])
   @@map("bank_guarantees")
+}
+
+model FinancialSummaryCard {
+  id             String    @id @default(uuid())
+  projectId      String
+  cardKey        String
+  valuePrimary   Decimal?  @db.Decimal(18, 4)
+  valueSecondary Decimal?  @db.Decimal(18, 4)
+  valueText      String?
+  subText        String?
+  noteText       String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  project        Project   @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, cardKey])
 }
 
 model PaymentTrackingItem {
