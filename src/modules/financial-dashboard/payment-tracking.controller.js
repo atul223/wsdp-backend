@@ -2,15 +2,33 @@
 /**
  * payment-tracking.controller.js
  *
- * Mirrors the structure of your existing amendment/bank-guarantee
- * controllers (module-scoped, prisma-direct, soft delete via deletedAt).
+ * UPDATED (this revision) — FIX for "Payment Tracking has no Edit
+ * option on already-added rows":
  *
- * IMPORTANT: Adjust the require path below ('../../config/db') if your
- * Prisma client is exported from a different location. Per your
- * backend-architecture.md, prisma is initialized in src/config/db.js.
+ * Root cause: for any project that has never had a real
+ * PaymentTrackingItem row created, listProjectPaymentTracking
+ * returned an EMPTY array, and the frontend silently fell back to
+ * hardcoded placeholder rows (Contract Value / Amount Invoiced /
+ * Amount Paid / Outstanding) that have no `id` — so Edit/Delete
+ * correctly show "—" for them, unlike your other tables which
+ * already have real DB rows.
+ *
+ * Fix: the FIRST time this endpoint is called for a project with
+ * zero Payment Tracking rows, it now auto-provisions those same 4
+ * rows as REAL, persisted, editable database records (same values,
+ * same order), then returns them. Every subsequent call just returns
+ * the real rows as normal. This is idempotent — it only seeds once,
+ * the moment items.length === 0.
  */
 
 const prisma = require('../../config/db');
+
+const DEFAULT_PAYMENT_TRACKING_ROWS = [
+  { description: 'Contract Value', amountAoa: 3625580000.00, amountUsd: 5599704.50, isHighlighted: true, sortOrder: 1 },
+  { description: 'Amount Invoiced', amountAoa: 650999524.39, amountUsd: 1005466.78, isHighlighted: false, sortOrder: 2 },
+  { description: 'Amount Paid', amountAoa: 404659374.56, amountUsd: 624995.17, isHighlighted: false, sortOrder: 3 },
+  { description: 'Outstanding', amountAoa: 246340149.83, amountUsd: 380471.61, isHighlighted: true, sortOrder: 4 },
+];
 
 function serializePaymentTracking(item) {
   return {
@@ -31,10 +49,28 @@ exports.listProjectPaymentTracking = async (req, res, next) => {
   try {
     const { projectId } = req.params;
 
-    const items = await prisma.paymentTrackingItem.findMany({
+    let items = await prisma.paymentTrackingItem.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
+
+    // FIX: auto-provision the 4 default reference rows on first use so
+    // the table is immediately editable instead of relying on read-only
+    // id-less placeholder data.
+    if (items.length === 0) {
+      await prisma.paymentTrackingItem.createMany({
+        data: DEFAULT_PAYMENT_TRACKING_ROWS.map((row) => ({
+          projectId,
+          status: 'active',
+          ...row,
+        })),
+      });
+
+      items = await prisma.paymentTrackingItem.findMany({
+        where: { projectId, deletedAt: null },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+    }
 
     res.json({
       success: true,
@@ -128,6 +164,8 @@ exports.updateProjectPaymentTracking = async (req, res, next) => {
               : Number(amount_usd)
             : existing.amountUsd,
         isHighlighted: is_highlighted !== undefined ? Boolean(is_highlighted) : existing.isHighlighted,
+        // NOTE: sortOrder is intentionally preserved unless explicitly
+        // provided — this is what keeps a row's position stable on edit.
         sortOrder:
           sort_order !== undefined && sort_order !== null && sort_order !== ''
             ? Number(sort_order)

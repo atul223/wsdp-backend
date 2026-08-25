@@ -39,12 +39,18 @@ const budgetRoutes = require('./modules/financial-dashboard/budget.routes');
 const paymentTrackingRoutes = require('./modules/financial-dashboard/payment-tracking.routes');
 const invoiceRoutes = require('./modules/financial-dashboard/invoice.routes');
 const financialSummaryRoutes = require('./modules/financial-dashboard/financial-summary.routes');
+// FIX (Issue #1 - 404 on PUT/DELETE /financial-summary-cards/:cardKey):
+// This route file existed on disk but was NEVER required/mounted here,
+// which is exactly why Express's notFoundMiddleware returned
+// "No route found for PUT ...". Registered below, alongside the other
+// financial-dashboard route files, following the exact same pattern.
+const financialSummaryCardRoutes = require('./modules/financial-dashboard/financial-summary-card.routes');
 const ipcTrackerRoutes = require('./modules/financial-dashboard/ipc-tracker.routes');
 const bankGuaranteeRoutes = require('./modules/financial-dashboard/bank-guarantee.routes');
 const amendmentRoutes = require('./modules/financial-dashboard/amendment.routes');
 
 const reportRoutes = require('./modules/reports/report.routes');
-const homeSummaryCardRoutes = require('./modules/home-dashboard/homeSummaryCard.routes'); 
+const homeSummaryCardRoutes = require('./modules/home-dashboard/homeSummaryCard.routes');
 
 const { mountSwagger } = require('./config/swagger');
 const { errorMiddleware, notFoundMiddleware } = require('./middlewares/error.middleware');
@@ -105,6 +111,7 @@ app.use('/api/v1', budgetRoutes);
 app.use('/api/v1', paymentTrackingRoutes);
 app.use('/api/v1', invoiceRoutes);
 app.use('/api/v1', financialSummaryRoutes);
+app.use('/api/v1', financialSummaryCardRoutes); // <-- NEWLY REGISTERED (fixes the 404)
 app.use('/api/v1', ipcTrackerRoutes);
 app.use('/api/v1', bankGuaranteeRoutes);
 app.use('/api/v1', amendmentRoutes);
