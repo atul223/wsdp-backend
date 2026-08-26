@@ -5,6 +5,19 @@
  * Role set matches auth-system-design.md:
  * admin, project_manager, site_engineer, planning_engineer,
  * finance, client, read_only_user
+ *
+ * CHANGE LOG (this revision):
+ *  - Added 'home_dashboard' to MODULES — it previously had NO permission
+ *    rows at all, which is why homeSummaryCard.routes.js had to bypass
+ *    requirePermission()/role.middleware.js entirely with its own
+ *    hardcoded role check. Now it's a first-class module like the rest.
+ *  - Added 'resource_dashboard' read access for the 'client' role — it
+ *    was missing, even though Client is supposed to get read-only access
+ *    to every dashboard per auth-system-design.md §1.
+ *  - Added 'home_dashboard' read access for every role except admin
+ *    (wildcard) and project_manager (full CRUD, matching the "PM owns
+ *    end-to-end" access level for every other module).
+ * No other rows, seed data, or behavior were changed.
  */
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
@@ -29,6 +42,7 @@ const MODULES = [
   'resource_dashboard',
   'reports',
   'settings',
+  'home_dashboard', // NEW — was missing entirely; see change log above.
 ];
 const ACTIONS = ['create', 'read', 'update', 'delete'];
 
@@ -43,6 +57,7 @@ const ROLE_MODULE_ACCESS = {
     resource_dashboard: ['create', 'read', 'update', 'delete'],
     reports: ['create', 'read', 'update', 'delete'],
     settings: ['read'],
+    home_dashboard: ['create', 'read', 'update', 'delete'], // NEW
   },
   site_engineer: {
     construction_progress: ['create', 'read', 'update'],
@@ -51,6 +66,7 @@ const ROLE_MODULE_ACCESS = {
     financial_dashboard: ['read'],
     ehs: ['read'],
     risk_delay: ['read'],
+    home_dashboard: ['read'], // NEW
   },
   planning_engineer: {
     construction_progress: ['create', 'read', 'update', 'delete'],
@@ -59,6 +75,7 @@ const ROLE_MODULE_ACCESS = {
     ehs: ['read'],
     risk_delay: ['read'],
     resource_dashboard: ['read'],
+    home_dashboard: ['read'], // NEW
   },
   finance: {
     financial_dashboard: ['create', 'read', 'update', 'delete'],
@@ -67,6 +84,7 @@ const ROLE_MODULE_ACCESS = {
     ehs: ['read'],
     risk_delay: ['read'],
     resource_dashboard: ['read'],
+    home_dashboard: ['read'], // NEW
   },
   client: {
     construction_progress: ['read'],
@@ -74,6 +92,8 @@ const ROLE_MODULE_ACCESS = {
     ehs: ['read'],
     risk_delay: ['read'],
     reports: ['read'],
+    resource_dashboard: ['read'], // NEW — was missing; see change log above.
+    home_dashboard: ['read'], // NEW
   },
   read_only_user: {
     construction_progress: ['read'],
@@ -82,6 +102,7 @@ const ROLE_MODULE_ACCESS = {
     risk_delay: ['read'],
     resource_dashboard: ['read'],
     reports: ['read'],
+    home_dashboard: ['read'], // NEW
   },
 };
 

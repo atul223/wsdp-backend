@@ -1,130 +1,78 @@
-/* ============================================================
-   home-dashboard/homeSummaryCard.routes.js
-   Mounted in app.js under '/api/v1'.
-
-   FIX HISTORY:
-   1) Crash "authorize is not a function" -> fixed by auto-detecting
-      your real auth.middleware.js / role.middleware.js exports
-      (kept below for `authenticate` only).
-   2) "Role 'admin' cannot update 'home_dashboard'" (403, even for
-      admin) -> your authorize(module, action) checks a permission
-      whitelist (DB table or hardcoded map) that was never seeded/
-      updated with the new 'home_dashboard' module, so EVERY role is
-      denied, admin included. Rather than depend on that external
-      whitelist (which would need a DB migration or a code change in
-      a file I don't have visibility into), this module now uses its
-      own self-contained role check below (`requireRole`), based
-      purely on `req.user.role` — which your JWT already carries
-      per auth-system-design.md ({ sub, role, project_ids, ... }).
-      This is fully decoupled from role.middleware.js's authorize()
-      and its module whitelist, so it works immediately.
-
-   Default policy (adjust ALLOWED_WRITE_ROLES below if needed):
-     - Read (GET)              -> any authenticated role
-     - Update/Delete/Import    -> admin, project_manager only
-
-   If you'd prefer this to go through your central permissions system
-   instead (so it shows up in an admin permissions UI, etc.), share
-   the full content of middlewares/role.middleware.js and I'll wire
-   the exact call your system expects, plus the SQL/seed changes
-   needed to register the 'home_dashboard' module there.
-   ============================================================ */
-
+/**
+ * src/modules/home-dashboard/homeSummaryCard.routes.js
+ *
+ * *** SECURITY FIX / REWIRE ***
+ * The previous version of this file worked around a 403 you were
+ * hitting ("Role 'admin' cannot update 'home_dashboard'") by writing a
+ * fully self-contained, hardcoded role check (`requireRole` defined
+ * inline in this file) that completely bypassed role.middleware.js's
+ * central requirePermission()/role_permissions system. Two problems
+ * with that approach, now both fixed:
+ *
+ *  1. It was a symptom fix, not a root-cause fix — the REAL problem was
+ *     that 'home_dashboard' had never been added to the `permissions`
+ *     table (see prisma/seed.js MODULES array). It's added there now,
+ *     so the central system works correctly and this file no longer
+ *     needs its own bypass.
+ *  2. It had NO project-scoping at all — any authenticated user could
+ *     read or write ANY project's home-summary-cards just by changing
+ *     the :projectId in the URL, since only role was checked, never
+ *     project membership. Fixed below with the same requireProjectScope
+ *     pattern used everywhere else in the app.
+ *
+ * IMPORTANT DEPLOY ORDER: this file depends on the updated prisma/seed.js
+ * (adds the 'home_dashboard' module + role grants). You MUST run
+ * `npm run prisma:seed` with the new seed.js BEFORE deploying this
+ * routes file, otherwise requirePermission('home_dashboard', ...) will
+ * find no matching rows and return 403 for EVERY role, including admin.
+ *
+ * Read access: same roles that can read every other dashboard (all 7
+ * roles, per prisma/seed.js). Write access (update/delete/import):
+ * admin (wildcard) + project_manager only, matching the access level
+ * PM has on every other module — same effective behavior as before,
+ * just now driven by the real permission system instead of a hardcoded
+ * list in this file.
+ */
 const express = require('express');
 const router = express.Router();
 
 const controller = require('./homeSummaryCard.controller');
+const { authenticate } = require('../../middlewares/auth.middleware');
+const { requirePermission, requireProjectScope } = require('../../middlewares/role.middleware');
 
-function passThrough(req, res, next) { next(); }
+const MODULE = 'home_dashboard';
 
-function resolveAuthenticate() {
-  let mod;
-  try {
-    mod = require('../../middlewares/auth.middleware');
-  } catch (e) {
-    console.warn('[home-dashboard] Could not load auth.middleware.js:', e.message);
-    return passThrough;
-  }
-
-  const candidate =
-    (typeof mod === 'function' && mod) ||
-    mod.authenticate ||
-    mod.verifyToken ||
-    mod.protect ||
-    mod.requireAuth ||
-    mod.isAuthenticated ||
-    mod.default;
-
-  if (typeof candidate === 'function') return candidate;
-
-  console.warn(
-    '[home-dashboard] auth.middleware.js did not export a recognizable function ' +
-      '(tried: authenticate, verifyToken, protect, requireAuth, isAuthenticated, default export). ' +
-      'Routes will run WITHOUT authentication until this is fixed.'
-  );
-  return passThrough;
-}
-
-/** Self-contained role gate — does NOT depend on role.middleware.js's
- *  authorize(module, action) or any external permission whitelist.
- *  allowedRoles === '*' means "any authenticated role". */
-function requireRole(allowedRoles) {
-  return function (req, res, next) {
-    const user = req.user || {};
-    const role = user.role || user.role_name || (user.data && user.data.role);
-
-    if (!role) {
-      return res.status(401).json({
-        success: false,
-        error: { code: 'UNAUTHENTICATED', message: 'Not authenticated' },
-      });
-    }
-
-    if (allowedRoles === '*' || allowedRoles.includes(String(role).toLowerCase())) {
-      return next();
-    }
-
-    return res.status(403).json({
-      success: false,
-      error: {
-        code: 'FORBIDDEN',
-        message: "Role '" + role + "' cannot perform this action on 'home_dashboard'",
-      },
-    });
-  };
-}
-
-const authenticate = resolveAuthenticate();
-
-// Adjust this list if other roles (e.g. 'finance', 'planning_engineer')
-// should also be allowed to edit Home Dashboard cards.
-const ALLOWED_WRITE_ROLES = ['admin', 'project_manager'];
+const scopeByParamProjectId = requireProjectScope((req) => req.params.projectId);
 
 router.get(
   '/projects/:projectId/home-summary-cards',
   authenticate,
-  requireRole('*'),
+  requirePermission(MODULE, 'read'),
+  scopeByParamProjectId,
   controller.getCards
 );
 
 router.put(
   '/projects/:projectId/home-summary-cards/:cardKey',
   authenticate,
-  requireRole(ALLOWED_WRITE_ROLES),
+  requirePermission(MODULE, 'update'),
+  scopeByParamProjectId,
   controller.upsertCard
 );
 
 router.delete(
   '/projects/:projectId/home-summary-cards/:cardKey',
   authenticate,
-  requireRole(ALLOWED_WRITE_ROLES),
+  requirePermission(MODULE, 'update'),
+  scopeByParamProjectId,
   controller.deleteCard
 );
 
 router.post(
   '/projects/:projectId/home-summary-cards/import',
   authenticate,
-  requireRole(ALLOWED_WRITE_ROLES),
+  requirePermission(MODULE, 'update'),
+  scopeByParamProjectId,
   controller.importCards
 );
 
