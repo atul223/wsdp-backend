@@ -24,7 +24,8 @@ async function writeAuditLog({ userId, action, referenceId, ipAddress, oldValue,
 }
 
 /** Cover status is derived the same way material "status" is: based on
- * remaining stock as a proportion of what was received. */
+ * remaining stock as a proportion of what was received. Used only as the
+ * fallback when no manual cover_override has been saved on the row. */
 function getCoverStatus(received, stock) {
   const totalNum = Number(received);
   const stockNum = Number(stock);
@@ -46,7 +47,8 @@ function toApiShape(row) {
     received_m: received,
     used_m: used,
     stock_m: stock,
-    cover: getCoverStatus(received, stock),
+    cover_override: row.coverOverride || null,
+    cover: row.coverOverride || getCoverStatus(received, stock),
     sort_order: row.sortOrder,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -97,6 +99,7 @@ async function create({ projectId, payload, userId, ipAddress }) {
         diameter: payload.diameter,
         receivedM: payload.received_m,
         usedM: payload.used_m,
+        coverOverride: payload.cover_override || null,
         sortOrder,
       },
     });
@@ -126,6 +129,7 @@ async function fullUpdate({ id, payload, userId, ipAddress }) {
         diameter: payload.diameter,
         receivedM: payload.received_m,
         usedM: payload.used_m,
+        coverOverride: payload.cover_override !== undefined ? (payload.cover_override || null) : existing.coverOverride,
         ...(payload.sort_order !== undefined ? { sortOrder: payload.sort_order } : {}),
       },
     });
@@ -151,6 +155,7 @@ async function partialUpdate({ id, payload, userId, ipAddress }) {
   if (payload.diameter !== undefined) data.diameter = payload.diameter;
   if (payload.received_m !== undefined) data.receivedM = payload.received_m;
   if (payload.used_m !== undefined) data.usedM = payload.used_m;
+  if (payload.cover_override !== undefined) data.coverOverride = payload.cover_override || null;
   if (payload.sort_order !== undefined) data.sortOrder = payload.sort_order;
 
   let updated;

@@ -106,6 +106,8 @@ app.use('/api/v1', allocationRoutes);
 app.use('/api/v1', hdpePipeStockRoutes);
 app.use('/api/v1', equipmentDeploymentRoutes);
 app.use('/api/v1', workforceEmployerRoutes);
+app.use('/api/v1', require('./modules/resource-dashboard/resourceSummary.routes'));
+
 
 app.use('/api/v1', budgetRoutes);
 app.use('/api/v1', paymentTrackingRoutes);

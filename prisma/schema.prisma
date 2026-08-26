@@ -120,6 +120,7 @@ model Project {
   members                  ProjectMember[]
   reports                  Report[]
   resources                Resource[]
+  resourceSummaryCards     ResourceSummaryCard[]
   risks                    Risk[]
   testingActivities        TestingActivity[]
   valveChamberSummary      ValveChamberSummary?
@@ -441,24 +442,26 @@ model Delay {
 }
 
 model Resource {
-  id            String       @id @default(uuid())
-  projectId     String       @map("project_id")
-  name          String
-  type          String
-  unit          String
-  totalCapacity Decimal      @map("total_capacity") @db.Decimal(18, 2)
-  notes         String?
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  deletedAt     DateTime?    @map("deleted_at")
-  allocations   Allocation[]
-  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid())
+  projectId      String       @map("project_id")
+  name           String
+  type           String
+  unit           String
+  totalCapacity  Decimal      @map("total_capacity") @db.Decimal(18, 2)
+  notes          String?
+  statusOverride String?      @map("status_override")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  deletedAt      DateTime?    @map("deleted_at")
+  allocations    Allocation[]
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, name])
   @@index([projectId])
   @@index([type])
   @@map("resources")
 }
+
 
 model Allocation {
   id             String   @id @default(uuid())
@@ -726,21 +729,23 @@ model HouseConnectionSummary {
 // -----------------------------------------------------------------------
 
 model HdpePipeStock {
-  id         String    @id @default(uuid())
-  projectId  String    @map("project_id")
-  diameter   String
-  receivedM  Decimal   @map("received_m") @db.Decimal(12, 2)
-  usedM      Decimal   @map("used_m") @db.Decimal(12, 2)
-  sortOrder  Int       @default(0) @map("sort_order")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  deletedAt  DateTime? @map("deleted_at")
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  diameter      String
+  receivedM     Decimal   @map("received_m") @db.Decimal(12, 2)
+  usedM         Decimal   @map("used_m") @db.Decimal(12, 2)
+  coverOverride String?   @map("cover_override")
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, diameter])
   @@index([projectId])
   @@map("hdpe_pipe_stocks")
 }
+
 
 model EquipmentDeployment {
   id         String    @id @default(uuid())
@@ -776,6 +781,29 @@ model WorkforceEmployer {
   @@index([projectId])
   @@map("workforce_employers")
 }
+
+// -----------------------------------------------------------------------
+// Resource Dashboard — editable summary/KPI cards (Materials Below
+// Reorder, Equipment Utilization, Manpower Deployed, Idle / Maintenance).
+// A missing row (or null valueOverride) means "keep auto-calculating this
+// card from live Resource/Allocation data" — same override pattern as
+// HomeSummaryCard / EhsComplianceSummary elsewhere in this schema.
+// -----------------------------------------------------------------------
+model ResourceSummaryCard {
+  id            String    @id @default(uuid())
+  projectId     String    @map("project_id")
+  cardKey       String    @map("card_key")
+  valueOverride Decimal?  @map("value_override") @db.Decimal(14, 2)
+  noteOverride  String?   @map("note_override")
+  updatedBy     String?   @map("updated_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, cardKey])
+  @@map("resource_summary_cards")
+}
+
 
 // -----------------------------------------------------------------------
 // Risk & Delay Dashboard - Non-Conformity Register and Corrective Actions

@@ -27,8 +27,22 @@ async function writeAuditLog({ userId, action, referenceId, ipAddress, oldValue,
   }
 }
 
+/**
+ * Same status derivation the frontend previously computed purely
+ * client-side (remaining <= 0 -> Below Reorder, remaining <= 25% of
+ * total -> Watch, else Adequate). Used only as the fallback when no
+ * manual status_override has been saved on the resource.
+ */
+function computeAutoStatus(total, remaining) {
+  if (remaining <= 0) return 'Below Reorder';
+  if (remaining <= total * 0.25) return 'Watch';
+  return 'Adequate';
+}
+
 function toApiShape(resource, allocatedQuantity) {
   const total = Number(resource.totalCapacity);
+  const remaining = allocatedQuantity !== undefined ? Number((total - allocatedQuantity).toFixed(2)) : undefined;
+
   return {
     id: resource.id,
     project_id: resource.projectId,
@@ -37,10 +51,15 @@ function toApiShape(resource, allocatedQuantity) {
     unit: resource.unit,
     total_capacity: total,
     notes: resource.notes || null,
+    status_override: resource.statusOverride || null,
+    // `status` is always present so any consumer can render a chip without
+    // re-implementing the auto-derivation rule; it simply prefers the
+    // manual override when one has been saved.
+    status: resource.statusOverride || (remaining !== undefined ? computeAutoStatus(total, remaining) : null),
     ...(allocatedQuantity !== undefined
       ? {
           allocated_quantity: allocatedQuantity,
-          remaining_capacity: Number((total - allocatedQuantity).toFixed(2)),
+          remaining_capacity: remaining,
         }
       : {}),
     created_at: resource.createdAt,
@@ -117,6 +136,7 @@ async function create({ projectId, payload, userId, ipAddress }) {
         unit: payload.unit,
         totalCapacity: payload.total_capacity,
         notes: payload.notes || null,
+        statusOverride: payload.status_override || null,
       },
     });
   } catch (err) {
@@ -150,6 +170,7 @@ async function fullUpdate({ id, payload, userId, ipAddress }) {
         unit: payload.unit,
         totalCapacity: payload.total_capacity,
         notes: payload.notes || null,
+        statusOverride: payload.status_override !== undefined ? (payload.status_override || null) : existing.statusOverride,
       },
     });
   } catch (err) {
@@ -188,6 +209,7 @@ async function partialUpdate({ id, payload, userId, ipAddress }) {
   if (payload.unit !== undefined) data.unit = payload.unit;
   if (payload.total_capacity !== undefined) data.totalCapacity = payload.total_capacity;
   if (payload.notes !== undefined) data.notes = payload.notes;
+  if (payload.status_override !== undefined) data.statusOverride = payload.status_override || null;
 
   let updated;
   try {
